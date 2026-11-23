@@ -6,6 +6,7 @@ import { OverviewCards } from "@/components/AnalyticsView";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { Badge, Card, LinkButton, Notice, SimulatedBanner } from "@/components/ui";
 import { fmtDateTime } from "@/lib/format";
+import { profileFor } from "@/lib/businessTypes";
 
 function Step({ done, n, title, children }: { done: boolean; n: number; title: string; children: React.ReactNode }) {
   return (
@@ -33,7 +34,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{company ? company.name : "Welcome"}</h1>
-          {analytics && <p className="text-sm text-gray-600">Last 28 complete days · {analytics.range.from} → {analytics.range.to} · {company!.timezone}</p>}
+          {company && <p className="text-sm text-gray-600">{profileFor(company.business_type).label}{analytics ? ` · last 28 complete days · ${analytics.range.from} → ${analytics.range.to} · ${company.timezone}` : ""}</p>}
         </div>
         {hasData && <LinkButton href="/app/analytics" variant="secondary">Open full analytics</LinkButton>}
       </div>
@@ -58,6 +59,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           {analytics.data.current.hasSimulated && <SimulatedBanner what="This company has a sample-data connection." />}
           <OverviewCards current={analytics.data.current} previous={analytics.data.previous} />
         </>
+      )}
+
+      {company && (
+        <Card title={`What to watch for a ${profileFor(company.business_type).label.toLowerCase()}`}>
+          <ul className="list-disc pl-5 text-sm text-gray-700">{profileFor(company.business_type).focus.map((f) => <li key={f}>{f}</li>)}</ul>
+          <p className="mt-2 text-xs text-gray-500">Some of these need sources that are not connected yet. <a className="text-brand-700" href="/app/connections">See recommended sources</a>.</p>
+        </Card>
       )}
 
       {conns && conns.connections.length > 0 && (

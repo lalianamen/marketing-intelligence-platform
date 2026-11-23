@@ -42,7 +42,8 @@ try {
 } catch {}
 
 const server = start("npx", ["next", "start", "-H", "127.0.0.1", "-p", "3000"], "next");
-const worker = start("npx", ["tsx", "src/worker/index.ts"], "worker");
+// E2E_NO_WORKER=1 checks the hosted (Vercel-like) mode: jobs run inside the web app.
+const worker = process.env.E2E_NO_WORKER ? null : start("npx", ["tsx", "src/worker/index.ts"], "worker");
 let browser;
 const steps = [];
 const step = (s) => {
@@ -86,6 +87,7 @@ try {
 
   await page.goto(`${BASE}/app/companies`);
   await page.fill('input[name="name"]', "Sunrise Heating & Air (demo)");
+  await page.check('input[name="business_type"][value="local_service"]');
   await page.fill('input[name="website"]', "example.com");
   await page.fill('input[name="industry"]', "HVAC services");
   await page.fill('input[name="country"]', "US");
@@ -95,6 +97,10 @@ try {
   assert.ok(await page.getByText("SIMULATED warehouse").isVisible());
   step("add company → data space Ready (labelled SIMULATED warehouse in local mode)");
   await page.screenshot({ path: `${OUT}/02-companies.png`, fullPage: true });
+
+  await page.goto(`${BASE}/app/connections`);
+  assert.match(await page.getByTestId("recommended-sources").innerText(), /Google Local Services Ads/);
+  step("connections page recommends sources for a local service business");
 
   await page.goto(`${BASE}/app/connections/csv`);
   await page.setInputFiles('input[name="file"]', "public/sample-marketing-data.csv");
@@ -176,6 +182,6 @@ try {
 } finally {
   await browser?.close();
   server.kill("SIGTERM");
-  worker.kill("SIGTERM");
+  worker?.kill("SIGTERM");
   setTimeout(() => process.exit(process.exitCode ?? 0), 500);
 }

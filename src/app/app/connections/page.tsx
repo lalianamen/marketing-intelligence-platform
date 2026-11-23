@@ -6,6 +6,7 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { Badge, Button, Card, EmptyState, LinkButton, Notice } from "@/components/ui";
 import { fmtDateTime } from "@/lib/format";
 import { disconnectAction, enableSampleConnectionAction, syncNowAction } from "../actions";
+import { profileFor } from "@/lib/businessTypes";
 
 export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; imported?: string; sample?: string; queued?: string; oauth?: string }> }) {
   const sp = await searchParams;
@@ -19,6 +20,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
   const { connections, runs, issues } = await loadConnections(supabase, company.id);
   const { data: providers } = await supabase.from("connector_providers").select("id,display_name,availability,description").order("display_name");
   const oauthReady = googleOAuthConfigured(loadConfig());
+  const profile = profileFor(company.business_type);
+  const providerById = new Map((providers ?? []).map((p) => [p.id, p]));
   const running = runs.some((r) => r.status === "queued" || r.status === "running");
   const live = (p: string) => connections.find((c) => c.provider_id === p && c.mode === "live");
   const sample = (p: string) => connections.find((c) => c.provider_id === p && c.mode === "simulated");
@@ -155,10 +158,33 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
         </Card>
       </div>
 
+      <Card title={`Recommended for a ${profile.label.toLowerCase()}`}>
+        <p className="mb-3 text-sm text-gray-600">In order of usefulness for this kind of business. You sign in to each with your own account; we never ask for your passwords.</p>
+        <ol className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4" data-testid="recommended-sources">
+          {profile.recommendedSources.map((id, i) => {
+            const p = providerById.get(id);
+            if (!p) return null;
+            const connected = connections.some((c) => c.provider_id === id);
+            const state =
+              connected ? { tone: "green" as const, text: "Connected" }
+              : id === "csv" ? { tone: "green" as const, text: "Available now" }
+              : p.availability === "requires_admin_setup" ? { tone: "blue" as const, text: oauthReady ? "Available" : "Sample data now · live soon" }
+              : p.availability === "requires_partner_access" ? { tone: "red" as const, text: "Requires partner access" }
+              : { tone: "gray" as const, text: "Coming later · use CSV" };
+            return (
+              <li key={id} className="rounded-lg border border-gray-200 p-3">
+                <div className="flex items-start justify-between gap-2"><span className="font-medium">{i + 1}. {p.display_name}</span><Badge tone={state.tone}>{state.text}</Badge></div>
+              </li>
+            );
+          })}
+        </ol>
+        {profile.csvTips.length > 0 && <p className="mt-3 text-xs text-gray-500">CSV tip: {profile.csvTips.join(" ")}</p>}
+      </Card>
+
       <Card title="Other platforms">
         <p className="mb-3 text-sm text-gray-600">Direct connections for these platforms are not available yet. Upload their reports as CSV meanwhile.</p>
         <ul className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-          {(providers ?? []).filter((p) => !["csv", "ga4", "google_ads"].includes(p.id)).map((p) => (
+          {(providers ?? []).filter((p) => !["csv", "ga4", "google_ads"].includes(p.id) && !profile.recommendedSources.includes(p.id)).map((p) => (
             <li key={p.id} className="rounded-lg border border-gray-200 p-3">
               <div className="flex items-center justify-between"><span className="font-medium">{p.display_name}</span>
                 <Badge tone={p.availability === "requires_partner_access" ? "red" : "gray"}>{p.availability === "requires_partner_access" ? "Requires partner access" : "Planned"}</Badge></div>

@@ -38,6 +38,9 @@ function mapPgError(err: unknown): never {
 export async function ensureLocalWarehouseDatabase(adminUrl: string, warehouseUrl: string): Promise<void> {
   const dbName = new URL(warehouseUrl).pathname.replace(/^\//, "");
   assertSafeIdentifier(dbName, "warehouse database name");
+  // Hosted Supabase: the simulated warehouse may live in the main database
+  // (one schema per company dataset); nothing to create then.
+  if (dbName === new URL(adminUrl).pathname.replace(/^\//, "")) return;
   const admin = new pg.Client({ connectionString: adminUrl });
   await admin.connect();
   try {

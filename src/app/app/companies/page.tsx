@@ -4,6 +4,7 @@ import { dataSpaceStatus, type DataSpaceStatus } from "@/server/companyStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { Badge, Button, Card, EmptyState, Field, Notice } from "@/components/ui";
 import { createCompanyAction, retryProvisioningAction } from "../actions";
+import { BUSINESS_PROFILES, BUSINESS_TYPES, profileFor } from "@/lib/businessTypes";
 
 const STATUS: Record<DataSpaceStatus, { tone: "gray" | "blue" | "green" | "red"; text: string; help: string }> = {
   pending: { tone: "gray", text: "Pending", help: "Waiting for the background worker to prepare the data space." },
@@ -41,7 +42,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="font-medium text-gray-900">{c.name}</p>
-                      <p className="text-xs text-gray-500">{[c.website, c.industry, c.country, c.timezone].filter(Boolean).join(" · ")}</p>
+                      <p className="text-xs text-gray-500">{[profileFor(c.business_type).label, c.website, c.industry, c.country, c.timezone].filter(Boolean).join(" · ")}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge tone={meta.tone} title={meta.help}>Data space: {meta.text}</Badge>
@@ -69,6 +70,18 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
           <form action={createCompanyAction} className="space-y-3">
             <input type="hidden" name="workspace_id" value={ctx.workspace.id} />
             <Field label="Company name" name="name" required />
+            <fieldset>
+              <legend className="text-sm font-medium text-gray-800">What kind of business is it?</legend>
+              <p className="mb-2 text-xs text-gray-500">We use this to suggest the right data sources and show the most useful numbers first.</p>
+              <div className="space-y-1.5">
+                {BUSINESS_TYPES.map((t, i) => (
+                  <label key={t} className="flex cursor-pointer gap-2 rounded-lg border border-gray-200 p-2 text-sm hover:bg-gray-50">
+                    <input type="radio" name="business_type" value={t} defaultChecked={i === 0} className="mt-1" />
+                    <span><span className="font-medium">{BUSINESS_PROFILES[t].label}</span><span className="block text-xs text-gray-500">{BUSINESS_PROFILES[t].description}</span></span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <Field label="Website" name="website" placeholder="example.com" />
             <Field label="Industry" name="industry" placeholder="e.g. HVAC services" />
             <Field label="Country" name="country" placeholder="US" hint="Two-letter country code." />

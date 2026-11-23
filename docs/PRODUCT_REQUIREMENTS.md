@@ -28,6 +28,7 @@ Core journey: **Register → create company → connect an approved source or up
 | 11 | I see understandable KPIs | Cards (spend, impressions, clicks, sessions, CTR, CPC, CPM), comparison to previous period, daily charts, by-source table, campaign table, freshness, failures, data-quality notes; missing inputs → "Not available" | Done | `kpi.test.ts`, E2E |
 | 12 | I can export a report | CSV (UTF-8 BOM, Excel-compatible), provenance columns, formula-injection-safe | Done. XLSX: not implemented (deferred) | `security-units.test.ts`, E2E |
 | 13 | I never see another company's data | RLS + server authorization on every operation; forged ids → "not found" | Done | `tenancy.test.ts`, E2E |
+| 15 | When adding a company I choose its business type | Six types; drives recommended sources, guidance and CSV tips; same data model for all; editable later without data loss | Done | `platform.test.ts`, E2E |
 | 14 | Admin can see technical details | Settings → Advanced: warehouse mode, registry (project/dataset), jobs, usage estimates, audit log | Done | E2E |
 
 ## Non-functional requirements

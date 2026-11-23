@@ -37,9 +37,9 @@ Confirmation emails: http://127.0.0.1:54324 (Mailpit). Sample data to upload:
 
 ```bash
 npm run typecheck
-npm test                         # 61 unit tests
-npm run test:integration         # 39 integration tests (needs db:start + env:local)
-npm run build && npm run test:e2e   # browser journey (13 steps)
+npm test                         # 65 unit tests
+npm run test:integration         # 42 integration tests (needs db:start + env:local)
+npm run build && npm run test:e2e   # browser journey (14 steps); E2E_NO_WORKER=1 checks hosted mode
 npm run check:secrets && npm run check:bundle
 ```
 
@@ -48,6 +48,7 @@ npm run check:secrets && npm run check:bundle
 - [Product requirements](docs/PRODUCT_REQUIREMENTS.md) · [Architecture](docs/ARCHITECTURE.md) · [Data model](docs/DATA_MODEL.md)
 - [Security](docs/SECURITY.md) · [Threats and costs](docs/THREATS_AND_COSTS.md) · [Costs](docs/COSTS.md)
 - [Connectors](docs/CONNECTORS.md) (GA4, Google Ads, CSV, future providers, access blockers)
+- [Deployment (hosted platform, prepared)](docs/DEPLOYMENT.md)
 - [Operations](docs/OPERATIONS.md) (local runs, real BigQuery mode, job recovery, retention, troubleshooting)
 - [Roadmap](docs/ROADMAP.md) · [ADRs](docs/adr/) · [Official sources checked](docs/SOURCES.md)
 

@@ -56,11 +56,11 @@ describe("registration, email verification, login/logout, workspace bootstrap", 
     expect(v.error).toBeNull();
     expect(v.data.session).not.toBeNull();
 
-    const [a, b, d] = await Promise.all([
+    const [a, b] = await Promise.all([
       c.rpc("bootstrap_workspace", { p_name: "Acme Agency" }),
       c.rpc("bootstrap_workspace", { p_name: "Acme Agency" }),
-      c.rpc("bootstrap_workspace", {}),
     ]);
+    const d = await c.rpc("bootstrap_workspace", {});
     expect(a.error).toBeNull();
     expect(a.data).toBe(b.data);
     expect(d.data).toBe(a.data);

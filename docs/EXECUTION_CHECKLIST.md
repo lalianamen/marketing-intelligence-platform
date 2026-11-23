@@ -1,6 +1,6 @@
 # Execution checklist (Phase 1)
 
-Last updated: 2026-11-23. ✅ done and tested · 🟡 done, mock/simulation only · ⛔ blocked by external access/approval · ⏭ deferred.
+Last updated: 2026-11-24. ✅ done and tested · 🟡 done, mock/simulation only · ⛔ blocked by external access/approval · ⏭ deferred.
 
 - ✅ Isolated new project directory, separate git repository (no LICENA code touched)
 - ✅ Official docs checked for BigQuery, GA4, Google Ads, OAuth, Supabase, Yelp, billing (`docs/SOURCES.md`)
@@ -23,4 +23,9 @@ Last updated: 2026-11-23. ✅ done and tested · 🟡 done, mock/simulation only
 - ✅ Secret scans (repo + client bundle), CI workflow file (⛔ not executed: the repository is not on GitHub yet)
 - ✅ Unit, integration and E2E tests passing locally
 - ⛔ Public GitHub repository: this session's GitHub access is limited to an existing repository (see README)
-- ✅ Not deployed anywhere; no billable resources created
+- ✅ Pushed to public GitHub repository lalianamen/marketing-intelligence-platform
+- ✅ Business type per company (local service, e-commerce, digital products, physical store, B2B, other): recommended sources, guidance, CSV tips
+- ✅ Hosted-mode job execution without a separate worker (`after()` + `/api/jobs/run` cron route with CRON_SECRET); E2E passes without the worker
+- ✅ Keyless BigQuery auth from Vercel (Workload Identity Federation) implemented; ⛔ not verified live
+- ⛔ Deployment to Vercel + Supabase cloud: prepared (`docs/DEPLOYMENT.md`, `vercel.json`); waiting for the owner's go-ahead
+- ✅ Not deployed anywhere yet; no billable resources created

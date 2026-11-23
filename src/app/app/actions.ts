@@ -9,6 +9,8 @@ import { COMPANY_COOKIE } from "@/server/appContext";
 import { storeValidatedUpload } from "@/server/ingestion/uploads";
 import { AccessDeniedError } from "@/server/auth/authz";
 import { CSV_LIMITS } from "@/server/ingestion/csv";
+import { BUSINESS_TYPES } from "@/lib/businessTypes";
+import { kickJobs } from "@/server/jobs/kick";
 
 // Server actions. Each action authenticates the user; writes go through
 // RLS-checked RPCs (user client) or, for CSV intake, through server-side
@@ -25,6 +27,7 @@ function friendly(message: string | undefined): string {
   if (/rate limit/i.test(message)) return "You are doing that too often. Please wait a little and try again.";
   if (/company limit/i.test(message)) return "This workspace has reached its company limit.";
   if (/invalid timezone/i.test(message)) return "Please choose a valid time zone.";
+  if (/invalid business type/i.test(message)) return "Please choose a business type.";
   if (/not found/i.test(message)) return "Not found, or you do not have access.";
   if (/already provisioned/i.test(message)) return "This company's data space is already ready.";
   if (/disconnected/i.test(message)) return "This connection is disconnected.";
@@ -57,9 +60,11 @@ export async function createCompanyAction(form: FormData): Promise<void> {
     p_industry: String(form.get("industry") ?? "").trim() || null,
     p_country: String(form.get("country") ?? "").trim().toUpperCase().slice(0, 2) || null,
     p_timezone: String(form.get("timezone") ?? "UTC"),
+    p_business_type: String(form.get("business_type") ?? "other"),
   });
   if (r.error) redirect("/app/companies?error=" + encodeURIComponent(friendly(r.error.message)));
   (await cookies()).set(COMPANY_COOKIE, r.data as string, { httpOnly: true, sameSite: "lax", path: "/" });
+  kickJobs();
   redirect(`/app/companies?created=${r.data}`);
 }
 
@@ -68,6 +73,7 @@ export async function retryProvisioningAction(form: FormData): Promise<void> {
   const r = await supabase.rpc("retry_provisioning", { p_company_id: String(form.get("company_id") ?? "") });
   if (r.error) redirect("/app/companies?error=" + encodeURIComponent(friendly(r.error.message)));
   revalidatePath("/app/companies");
+  kickJobs();
   redirect("/app/companies");
 }
 
@@ -79,6 +85,7 @@ export async function enableSampleConnectionAction(form: FormData): Promise<void
   });
   if (r.error) redirect("/app/connections?error=" + encodeURIComponent(friendly(r.error.message)));
   await supabase.rpc("request_sync", { p_connection_id: r.data });
+  kickJobs();
   redirect("/app/connections?sample=1");
 }
 
@@ -86,6 +93,7 @@ export async function syncNowAction(form: FormData): Promise<void> {
   const { supabase } = await requireUser();
   const r = await supabase.rpc("request_sync", { p_connection_id: String(form.get("connection_id") ?? "") });
   if (r.error) redirect("/app/connections?error=" + encodeURIComponent(friendly(r.error.message)));
+  kickJobs();
   redirect("/app/connections?queued=1");
 }
 
@@ -107,7 +115,11 @@ export async function updateCompanyAction(form: FormData): Promise<void> {
   const { supabase } = await requireUser();
   const id = String(form.get("company_id") ?? "");
   const name = String(form.get("name") ?? "").trim().slice(0, 160);
-  if (name) await supabase.from("companies").update({ name }).eq("id", id);
+  const businessType = String(form.get("business_type") ?? "");
+  const patch: Record<string, string> = {};
+  if (name) patch.name = name;
+  if ((BUSINESS_TYPES as readonly string[]).includes(businessType)) patch.business_type = businessType;
+  if (Object.keys(patch).length) await supabase.from("companies").update(patch).eq("id", id);
   redirect("/app/settings?saved=1");
 }
 
@@ -163,5 +175,6 @@ export async function confirmCsvImportAction(form: FormData): Promise<void> {
   const { supabase } = await requireUser();
   const r = await supabase.rpc("queue_csv_import", { p_upload_id: String(form.get("upload_id") ?? "") });
   if (r.error) redirect("/app/connections/csv?error=" + encodeURIComponent(friendly(r.error.message)));
+  kickJobs();
   redirect("/app/connections?imported=1");
 }

@@ -11,6 +11,7 @@ export interface CompanySummary {
   website: string | null;
   industry: string | null;
   country: string | null;
+  business_type: string;
 }
 
 export interface AppContext {
@@ -50,7 +51,7 @@ export async function getAppContext(companyParam?: string | null): Promise<AppCo
 
   const { data: companies } = await supabase
     .from("companies")
-    .select("id, name, timezone, workspace_id, website, industry, country")
+    .select("id, name, timezone, workspace_id, website, industry, country, business_type")
     .eq("status", "active")
     .order("created_at");
   const list = (companies ?? []) as CompanySummary[];
