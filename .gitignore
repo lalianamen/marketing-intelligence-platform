@@ -1,0 +1,27 @@
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+test-results/
+playwright-report/
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+*credentials*.json
+gcloud-adc*.json
+
+# local supabase
+supabase/.branches
+supabase/.temp
+supabase/.env
+
+# real exports / customer data
+exports/
+*.xlsx
