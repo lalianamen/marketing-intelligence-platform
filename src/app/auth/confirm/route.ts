@@ -8,9 +8,9 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type") as EmailOtpType | null;
-  const nextParam = url.searchParams.get("next") ?? "/app";
+  const nextParam = url.searchParams.get("next") ?? "/app/companies";
   // Only allow same-site relative redirects.
-  const next = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/app";
+  const next = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/app/companies";
   // Default Supabase email templates (hosted projects) redirect here with a PKCE `code`.
   const code = url.searchParams.get("code");
   if (code) {

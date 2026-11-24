@@ -1,4 +1,4 @@
-import { getAppContext } from "@/server/appContext";
+import { getCompanyContext } from "@/server/appContext";
 import { loadAnalytics } from "@/server/analyticsLoader";
 import { AnalyticsView } from "@/components/AnalyticsView";
 import { EmptyState, Notice } from "@/components/ui";
@@ -7,7 +7,7 @@ const PRESETS = [7, 28, 90, 365];
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; days?: string }> }) {
   const sp = await searchParams;
-  const ctx = await getAppContext();
+  const ctx = await getCompanyContext();
   if (!ctx.company) return <EmptyState title="No company selected">Add a company to see analytics. <a className="text-brand-700" href="/app/companies">Add a company</a>.</EmptyState>;
   const { range, data } = await loadAnalytics(ctx.userId, ctx.company, sp);
   const exportHref = `/api/export?company=${ctx.company.id}&from=${range.from}&to=${range.to}`;

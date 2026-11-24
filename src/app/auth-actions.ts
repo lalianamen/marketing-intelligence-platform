@@ -64,7 +64,7 @@ export async function signInAction(form: FormData): Promise<void> {
     if (/not confirmed/i.test(error.message)) redirect(`/check-email?email=${encodeURIComponent(email)}`);
     back("/login", { error: "Email or password is incorrect." });
   }
-  redirect("/app");
+  redirect("/app/companies");
 }
 
 export async function forgotPasswordAction(form: FormData): Promise<void> {

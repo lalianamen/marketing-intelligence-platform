@@ -36,25 +36,13 @@ function friendly(message: string | undefined): string {
   return "Something went wrong. Please try again.";
 }
 
-export async function selectCompanyAction(form: FormData): Promise<void> {
-  const { supabase } = await requireUser();
-  const id = String(form.get("company_id") ?? "");
-  const back = String(form.get("back") ?? "/app");
-  // Only accept a company the user can read (RLS); otherwise ignore.
-  const { data } = await supabase.from("companies").select("id").eq("id", id).maybeSingle();
-  if (data) {
-    (await cookies()).set(COMPANY_COOKIE, data.id, { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production" });
-  }
-  redirect(back.startsWith("/app") ? back : "/app");
-}
-
 export async function createCompanyAction(form: FormData): Promise<void> {
   const { supabase } = await requireUser();
   const name = String(form.get("name") ?? "").trim();
-  if (!name) redirect("/app/companies?error=" + encodeURIComponent("Company name is required."));
+  if (!name) redirect("/app/companies/new?error=" + encodeURIComponent("Company name is required."));
   const website = String(form.get("website") ?? "").trim();
   if (website && !/^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(website))
-    redirect("/app/companies?error=" + encodeURIComponent("Website does not look like a web address."));
+    redirect("/app/companies/new?error=" + encodeURIComponent("Website does not look like a web address."));
   const r = await supabase.rpc("create_company", {
     p_workspace_id: String(form.get("workspace_id") ?? ""),
     p_name: name.slice(0, 160),
@@ -64,7 +52,7 @@ export async function createCompanyAction(form: FormData): Promise<void> {
     p_timezone: String(form.get("timezone") ?? "UTC"),
     p_business_type: String(form.get("business_type") ?? "other"),
   });
-  if (r.error) redirect("/app/companies?error=" + encodeURIComponent(friendly(r.error.message)));
+  if (r.error) redirect("/app/companies/new?error=" + encodeURIComponent(friendly(r.error.message)));
   (await cookies()).set(COMPANY_COOKIE, r.data as string, { httpOnly: true, sameSite: "lax", path: "/" });
   kickJobs();
   redirect(`/app/companies?created=${r.data}`);

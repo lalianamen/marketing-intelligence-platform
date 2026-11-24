@@ -1,11 +1,11 @@
-import { getAppContext } from "@/server/appContext";
+import { getCompanyContext } from "@/server/appContext";
 import { CsvUploader } from "@/components/CsvUploader";
 import { Card, EmptyState, Notice } from "@/components/ui";
 import { OPTIONAL_COLUMNS, REQUIRED_COLUMNS } from "@/server/ingestion/csv";
 
 export default async function CsvPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const sp = await searchParams;
-  const ctx = await getAppContext();
+  const ctx = await getCompanyContext();
   if (!ctx.company) return <EmptyState title="Add a company first">Upload data for a company. <a className="text-brand-700" href="/app/companies">Add a company</a>.</EmptyState>;
   return (
     <div className="grid gap-6 lg:grid-cols-3">

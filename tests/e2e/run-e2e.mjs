@@ -80,12 +80,13 @@ try {
     return href?.replace(/&amp;/g, "&");
   }, "confirmation email");
   await page.goto(link);
-  await page.waitForURL(/\/app$/);
-  await page.getByText("Get started").waitFor();
-  step("email confirmation link signs in and opens onboarding");
+  await page.waitForURL(/\/app\/companies$/);
+  await page.getByText("No companies yet").waitFor();
+  step("email confirmation link signs in and opens the Companies list");
   await page.screenshot({ path: `${OUT}/01-onboarding.png`, fullPage: true });
 
-  await page.goto(`${BASE}/app/companies`);
+  await page.click('a:has-text("+ Add company")');
+  await page.waitForURL(/\/app\/companies\/new$/);
   await page.fill('input[name="name"]', "Sunrise Heating & Air (demo)");
   await page.check('input[name="business_type"][value="local_service"]');
   await page.fill('input[name="website"]', "example.com");
@@ -93,10 +94,16 @@ try {
   await page.fill('input[name="country"]', "US");
   await page.click('button:has-text("Add company")');
   await page.waitForURL(/created=/);
-  await page.getByText("Data space: Ready").waitFor({ timeout: 60_000 });
-  assert.ok(await page.getByText("SIMULATED warehouse").isVisible());
-  step("add company → data space Ready (labelled SIMULATED warehouse in local mode)");
+  await page.locator('[data-testid="company-row"]').getByText("Ready").waitFor({ timeout: 60_000 });
+  assert.ok(await page.getByText("Simulated warehouse").isVisible());
+  step("add company → data space Ready (labelled Simulated warehouse in local mode)");
   await page.screenshot({ path: `${OUT}/02-companies.png`, fullPage: true });
+
+  await page.click('[data-testid="company-row"] a');
+  await page.waitForURL(/\/app$/);
+  assert.equal(await page.locator('[data-testid="current-company"]').textContent(), "Sunrise Heating & Air (demo)");
+  await page.getByText("Get started").waitFor();
+  step("clicking a company opens it with its own menu");
 
   await page.goto(`${BASE}/app/connections`);
   assert.match(await page.getByTestId("recommended-sources").innerText(), /Google Local Services Ads/);

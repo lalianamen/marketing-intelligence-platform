@@ -1,4 +1,4 @@
-import { getAppContext } from "@/server/appContext";
+import { getCompanyContext } from "@/server/appContext";
 import { getUser } from "@/server/supabase/server";
 import { dataSpaceStatus, loadConnections, modeBadge, PROVIDER_LABEL } from "@/server/companyStatus";
 import { loadAnalytics } from "@/server/analyticsLoader";
@@ -19,7 +19,7 @@ function Step({ done, n, title, children }: { done: boolean; n: number; title: s
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ password?: string }> }) {
   const sp = await searchParams;
-  const ctx = await getAppContext();
+  const ctx = await getCompanyContext();
   const { supabase } = await getUser();
   const company = ctx.company;
   const space = company ? (await dataSpaceStatus(supabase, [company.id]))[company.id]! : null;
@@ -33,7 +33,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       {sp.password && <Notice tone="green">Your password was updated.</Notice>}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">{company ? company.name : "Welcome"}</h1>
+          <h1 className="text-2xl font-semibold">Overview</h1>
           {company && <p className="text-sm text-gray-600">{profileFor(company.business_type).label}{analytics ? ` · last 28 complete days · ${analytics.range.from} → ${analytics.range.to} · ${company.timezone}` : ""}</p>}
         </div>
         {hasData && <LinkButton href="/app/analytics" variant="secondary">Open full analytics</LinkButton>}

@@ -57,6 +57,14 @@ export async function getAppContext(companyParam?: string | null): Promise<AppCo
   const list = (companies ?? []) as CompanySummary[];
   const store = await cookies();
   const wanted = companyParam ?? store.get(COMPANY_COOKIE)?.value ?? null;
-  const company = list.find((c) => c.id === wanted) ?? list[0] ?? null;
+  // No silent fallback: the user picks a company on the Companies page and works inside it.
+  const company = list.find((c) => c.id === wanted) ?? null;
   return { userId: user.id, email: user.email ?? "", workspaces, workspace, companies: list, company };
+}
+
+/** For pages that only make sense inside a company: without one, go to the Companies list. */
+export async function getCompanyContext(): Promise<AppContext & { company: CompanySummary }> {
+  const ctx = await getAppContext();
+  if (!ctx.company) redirect("/app/companies");
+  return ctx as AppContext & { company: CompanySummary };
 }

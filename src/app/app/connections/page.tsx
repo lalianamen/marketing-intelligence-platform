@@ -1,4 +1,4 @@
-import { getAppContext } from "@/server/appContext";
+import { getCompanyContext } from "@/server/appContext";
 import { getUser } from "@/server/supabase/server";
 import { dataSpaceStatus, loadConnections, modeBadge, PROVIDER_LABEL } from "@/server/companyStatus";
 import { googleOAuthConfigured, loadConfig } from "@/server/config";
@@ -10,7 +10,7 @@ import { profileFor } from "@/lib/businessTypes";
 
 export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; imported?: string; sample?: string; queued?: string; oauth?: string }> }) {
   const sp = await searchParams;
-  const ctx = await getAppContext();
+  const ctx = await getCompanyContext();
   const { supabase } = await getUser();
   if (!ctx.company) {
     return <EmptyState title="Add a company first">Data connections belong to a company. <a className="text-brand-700" href="/app/companies">Add a company</a>.</EmptyState>;
