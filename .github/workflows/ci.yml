@@ -43,6 +43,14 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npx supabase start
+      # Auth reloads custom email templates a few seconds after start; wait until they are served.
+      - name: Wait for auth email templates
+        run: |
+          for i in $(seq 1 30); do
+            docker exec supabase_auth_mip-local wget -qO- http://supabase_kong_mip-local:8088/email/confirmation.html 2>/dev/null | grep -q token_hash && break
+            sleep 2
+          done
+          sleep 12
       - run: npm run env:local
       - run: npm run test:integration
       - run: npx supabase stop
