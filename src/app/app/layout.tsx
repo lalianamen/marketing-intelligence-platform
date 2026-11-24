@@ -27,7 +27,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
-      <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-gray-400">Phase 1 · local development build · not deployed</footer>
+      <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-gray-400">Phase 1 · early access</footer>
     </div>
   );
 }

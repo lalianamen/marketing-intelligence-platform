@@ -17,7 +17,7 @@ export default async function Home() {
         <LinkButton href="/signup">Create an account</LinkButton>
         <LinkButton href="/login" variant="secondary">Log in</LinkButton>
       </div>
-      <p className="mt-10 text-xs text-gray-500">Phase 1 development build. Runs locally; not deployed.</p>
+      <p className="mt-10 text-xs text-gray-500">Phase 1 · early access.</p>
     </main>
   );
 }
