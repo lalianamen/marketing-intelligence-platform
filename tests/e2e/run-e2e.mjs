@@ -102,8 +102,8 @@ try {
   await page.click('[data-testid="company-row"] a');
   await page.waitForURL(/\/app$/);
   assert.equal(await page.locator('[data-testid="current-company"]').textContent(), "Sunrise Heating & Air (demo)");
-  await page.getByText("Get started").waitFor();
-  step("clicking a company opens it with its own menu");
+  await page.getByRole("heading", { name: "Connectors" }).waitFor();
+  step("clicking a company opens its dashboard with its own menu");
 
   await page.goto(`${BASE}/app/connections`);
   assert.match(await page.getByTestId("recommended-sources").innerText(), /Google Local Services Ads/);
@@ -168,6 +168,13 @@ try {
   assert.ok((await page.getByTestId("kpi-clicks").innerText()).replace(/,/g, "").includes(String(expectedClicks)), "sample data must not change real totals");
   step("sample Google Ads connection syncs and is labelled SIMULATED everywhere");
   await page.screenshot({ path: `${OUT}/06-analytics-with-sample.png`, fullPage: true });
+
+  await page.goto(`${BASE}/app?days=90`);
+  await page.locator('[data-testid="connector-card"]').first().waitFor();
+  assert.ok((await page.locator('[data-testid="connector-card"]').count()) >= 2, "dashboard lists connectors");
+  await page.getByText("Last update").first().waitFor();
+  await page.screenshot({ path: `${OUT}/09-dashboard.png`, fullPage: true });
+  step("dashboard shows connectors with last update and charts");
 
   await page.click('[data-testid="account-menu"] summary');
   await page.getByText("Signed in as").first().waitFor();

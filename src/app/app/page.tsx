@@ -1,93 +1,154 @@
 import { getCompanyContext } from "@/server/appContext";
 import { getUser } from "@/server/supabase/server";
-import { dataSpaceStatus, loadConnections, modeBadge, PROVIDER_LABEL } from "@/server/companyStatus";
+import { dataSpaceStatus, loadConnections, modeBadge, PROVIDER_LABEL, type ConnectionRow, type SyncRunRow } from "@/server/companyStatus";
 import { loadAnalytics } from "@/server/analyticsLoader";
-import { OverviewCards } from "@/components/AnalyticsView";
+import { OverviewCards, sourceLabel } from "@/components/AnalyticsView";
+import { BarList, LineChart } from "@/components/Charts";
 import { AutoRefresh } from "@/components/AutoRefresh";
-import { Badge, Card, LinkButton, Notice, SimulatedBanner } from "@/components/ui";
-import { fmtDateTime } from "@/lib/format";
-import { profileFor } from "@/lib/businessTypes";
+import { Badge, EmptyState, LinkButton, Notice, SimulatedBanner } from "@/components/ui";
+import { fmtDateTime, fmtInt, fmtMoney } from "@/lib/format";
 
-function Step({ done, n, title, children }: { done: boolean; n: number; title: string; children: React.ReactNode }) {
+const PRESETS = [7, 28, 90];
+
+function ago(iso: string | null): string {
+  if (!iso) return "never";
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `${h} h ago`;
+  return `${Math.round(h / 24)} days ago`;
+}
+
+const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
+
+function ConnectorCard({ c, lastRun }: { c: ConnectionRow; lastRun: SyncRunRow | undefined }) {
+  const b = modeBadge(c.mode);
   return (
-    <li className="flex gap-3">
-      <span className={`flex h-7 w-7 flex-none items-center justify-center rounded-full text-sm font-semibold ${done ? "bg-green-600 text-white" : "bg-gray-200 text-gray-700"}`}>{done ? "✓" : n}</span>
-      <div><p className="font-medium text-gray-900">{title}</p><div className="text-sm text-gray-600">{children}</div></div>
+    <li className="rounded-xl border border-gray-200 bg-white p-4" data-testid="connector-card">
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-medium text-gray-900">{PROVIDER_LABEL[c.provider_id] ?? c.provider_id}</p>
+        <Badge tone={b.tone}>{b.text}</Badge>
+      </div>
+      {c.external_account_name && <p className="text-xs text-gray-500">{c.external_account_name}</p>}
+      <dl className="mt-3 space-y-1 text-sm">
+        <div className="flex justify-between gap-2"><dt className="text-gray-500">Last update</dt><dd className="text-right font-medium text-gray-900" title={fmtDateTime(c.last_synced_at)}>{ago(c.last_synced_at)}</dd></div>
+        <div className="flex justify-between gap-2"><dt className="text-gray-500">Data up to</dt><dd className="text-right text-gray-900">{c.data_as_of ?? "—"}</dd></div>
+        {lastRun && (
+          <div className="flex justify-between gap-2">
+            <dt className="text-gray-500">Last run</dt>
+            <dd className="text-right"><Badge tone={RUN_TONE[lastRun.status] ?? "gray"}>{lastRun.status}</Badge>{lastRun.status === "succeeded" && <span className="ml-1 text-xs text-gray-500">{fmtInt(lastRun.rows_written)} rows</span>}</dd>
+          </div>
+        )}
+      </dl>
+      {c.status !== "connected" && <p className="mt-2 text-xs text-red-700">{c.last_error ?? `Status: ${c.status}`}</p>}
     </li>
   );
 }
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ password?: string }> }) {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ password?: string; days?: string }> }) {
   const sp = await searchParams;
   const ctx = await getCompanyContext();
   const { supabase } = await getUser();
   const company = ctx.company;
-  const space = company ? (await dataSpaceStatus(supabase, [company.id]))[company.id]! : null;
-  const conns = company ? await loadConnections(supabase, company.id) : null;
-  const analytics = company && space?.status === "ready" ? await loadAnalytics(ctx.userId, company, {}) : null;
-  const hasData = (analytics?.data.current?.rowCount ?? 0) > 0;
-  const hasAnyImport = (conns?.runs ?? []).some((r) => r.status === "succeeded");
+  const days = PRESETS.includes(Number(sp.days)) ? Number(sp.days) : 28;
+  const space = (await dataSpaceStatus(supabase, [company.id]))[company.id]!;
+  const conns = await loadConnections(supabase, company.id);
+  const analytics = space.status === "ready" ? await loadAnalytics(ctx.userId, company, { days: String(days) }) : null;
+  const current = analytics?.data.current ?? null;
+  const previous = analytics?.data.previous ?? null;
+  const hasData = (current?.rowCount ?? 0) > 0;
+  const busy = space.status === "pending" || space.status === "preparing" || conns.runs.some((r) => r.status === "queued" || r.status === "running");
+  const lastRunByConn = new Map<string, SyncRunRow>();
+  for (const r of conns.runs) if (!lastRunByConn.has(r.connection_id)) lastRunByConn.set(r.connection_id, r);
+  const single = current && current.currencies.length === 1 ? current.currencies[0]! : null;
+  const money = (m: Record<string, number>) => Object.values(m).reduce((a, b) => a + b, 0);
+  const has = (k: "sessions" | "clicks" | "spend") => (current?.daily ?? []).some((d) => d[k] !== null && d[k] !== 0);
+  const desc = <T extends { value: number }>(xs: T[]) => [...xs].sort((a, b) => b.value - a.value);
 
   return (
     <div className="space-y-6">
       {sp.password && <Notice tone="green">Your password was updated.</Notice>}
+      <AutoRefresh active={busy} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Overview</h1>
-          {company && <p className="text-sm text-gray-600">{profileFor(company.business_type).label}{analytics ? ` · last 28 complete days · ${analytics.range.from} → ${analytics.range.to} · ${company.timezone}` : ""}</p>}
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          {analytics && <p className="text-sm text-gray-600">Last {days} complete days · {analytics.range.from} → {analytics.range.to} · {company.timezone} · compared with the previous {days} days</p>}
         </div>
-        {hasData && <LinkButton href="/app/analytics" variant="secondary">Open full analytics</LinkButton>}
+        <div className="flex flex-wrap items-center gap-2">
+          {PRESETS.map((d) => (
+            <a key={d} href={`/app?days=${d}`} className={`rounded-lg px-3 py-1.5 text-sm ring-1 ring-gray-300 ${d === days ? "bg-brand-50 text-brand-700" : "bg-white text-gray-700"}`}>{d} days</a>
+          ))}
+          <LinkButton href={`/app/analytics?days=${days}`} variant="secondary">Full analytics</LinkButton>
+        </div>
       </div>
-      <AutoRefresh active={space?.status === "pending" || space?.status === "preparing" || (conns?.runs ?? []).some((r) => r.status === "queued" || r.status === "running")} />
 
-      {!hasData && (
-        <Card title="Get started">
-          <ol className="space-y-4">
-            <Step n={1} done title="Create your account">You are signed in.</Step>
-            <Step n={2} done={!!company} title="Add a company">{company ? `${ctx.companies.length} compan${ctx.companies.length === 1 ? "y" : "ies"} added.` : <a className="text-brand-700" href="/app/companies">Add your first company →</a>}</Step>
-            <Step n={3} done={space?.status === "ready"} title="Data space prepared">
-              {space ? (space.status === "ready" ? (space.simulated ? "Ready (local simulated warehouse — BigQuery is not configured in this environment)." : "Ready in BigQuery.") : `Status: ${space.status}.`) : "Happens automatically after you add a company."}
-            </Step>
-            <Step n={4} done={hasAnyImport} title="Connect a source or upload a CSV"><a className="text-brand-700" href="/app/connections">Go to Data Connections →</a></Step>
-            <Step n={5} done={hasData} title="See your KPIs">Your numbers appear here after the first import.</Step>
-          </ol>
-        </Card>
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-base font-semibold">Connectors</h2>
+          <a href="/app/connections" className="text-sm text-brand-700 hover:underline">Manage connections →</a>
+        </div>
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {conns.connections.map((c) => <ConnectorCard key={c.id} c={c} lastRun={lastRunByConn.get(c.id)} />)}
+          <li>
+            <a href="/app/connections" className="flex h-full min-h-32 items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white p-4 text-sm font-medium text-brand-700 hover:border-brand-300 hover:bg-brand-50">
+              + Connect a source or upload CSV
+            </a>
+          </li>
+        </ul>
+        {conns.runs.some((r) => r.status === "failed" || r.status === "dead") && (
+          <p className="mt-2 text-sm text-red-700">An update failed. <a className="underline" href="/app/connections">See details</a>.</p>
+        )}
+        {conns.issues.some((i) => i.severity !== "info") && (
+          <p className="mt-2 text-sm text-amber-800">There are data-quality warnings. <a className="underline" href="/app/connections">Review them</a>.</p>
+        )}
+      </section>
+
+      {space.status !== "ready" && <Notice tone="blue">The company&apos;s data space is being prepared. Charts appear once it is ready and data is imported.</Notice>}
+
+      {space.status === "ready" && !hasData && (
+        <EmptyState title="No data in this period">
+          Upload a CSV or connect a source, or choose a longer period above.
+        </EmptyState>
       )}
 
-      {analytics?.data.current && hasData && (
+      {current && hasData && (
         <>
-          {analytics.data.current.hasSimulated && <SimulatedBanner what="This company has a sample-data connection." />}
-          <OverviewCards current={analytics.data.current} previous={analytics.data.previous} />
+          {current.hasSimulated && <SimulatedBanner what="This company has a sample-data connection." />}
+          <OverviewCards current={current} previous={previous} />
+          <div className="grid gap-4 lg:grid-cols-2">
+            {has("sessions") && <LineChart title="Website sessions per day" points={current.daily.map((d) => ({ x: d.date, y: d.sessions }))} format={(n) => fmtInt(n)} />}
+            {has("clicks") && <LineChart title="Clicks per day" points={current.daily.map((d) => ({ x: d.date, y: d.clicks }))} format={(n) => fmtInt(n)} />}
+            {single && has("spend") && <LineChart title={`Ad spend per day (${single})`} points={current.daily.map((d) => ({ x: d.date, y: d.spend }))} format={(n) => fmtMoney(n, single)} />}
+            <BarList
+              title="Sessions by source"
+              items={desc(current.bySource.filter((s) => (s.totals.sessions ?? 0) > 0).map((s) => ({ label: sourceLabel(s.origin, s.source), value: s.totals.sessions!, note: s.isSimulated ? "simulated" : undefined })))}
+              format={(n) => fmtInt(n)}
+            />
+            <BarList
+              title="Leads / sign-ups by source"
+              items={desc(current.bySource.filter((s) => (s.totals.leads ?? 0) > 0).map((s) => ({ label: sourceLabel(s.origin, s.source), value: s.totals.leads!, note: s.isSimulated ? "simulated" : undefined })))}
+              format={(n) => fmtInt(n)}
+            />
+            {single && (
+              <BarList
+                title={`Revenue by source (${single})`}
+                items={current.bySource
+                  .map((s) => ({ s, v: money(s.totals.billedRevenueByCurrency) + money(s.totals.attributedRevenueByCurrency) }))
+                  .filter((x) => x.v > 0)
+                  .map(({ s, v }) => ({ label: sourceLabel(s.origin, s.source), value: v, note: s.isSimulated ? "simulated" : undefined }))}
+                format={(n) => fmtMoney(n, single)}
+              />
+            )}
+            {single && (
+              <BarList
+                title={`Spend by source (${single})`}
+                items={current.bySource.filter((s) => s.totals.spendByCurrency[single]).map((s) => ({ label: sourceLabel(s.origin, s.source), value: s.totals.spendByCurrency[single]!, note: s.isSimulated ? "simulated" : undefined }))}
+                format={(n) => fmtMoney(n, single)}
+              />
+            )}
+          </div>
         </>
-      )}
-
-      {company && (
-        <Card title={`What to watch for a ${profileFor(company.business_type).label.toLowerCase()}`}>
-          <ul className="list-disc pl-5 text-sm text-gray-700">{profileFor(company.business_type).focus.map((f) => <li key={f}>{f}</li>)}</ul>
-          <p className="mt-2 text-xs text-gray-500">Some of these need sources that are not connected yet. <a className="text-brand-700" href="/app/connections">See recommended sources</a>.</p>
-        </Card>
-      )}
-
-      {conns && conns.connections.length > 0 && (
-        <Card title="Data freshness">
-          <ul className="divide-y divide-gray-100 text-sm">
-            {conns.connections.map((c) => {
-              const b = modeBadge(c.mode);
-              return (
-                <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                  <span className="font-medium">{PROVIDER_LABEL[c.provider_id] ?? c.provider_id} <Badge tone={b.tone}>{b.text}</Badge></span>
-                  <span className="text-gray-600">Updated {fmtDateTime(c.last_synced_at)} · data up to {c.data_as_of ?? "—"} {c.status !== "connected" && <Badge tone="red">{c.status}</Badge>}</span>
-                </li>
-              );
-            })}
-          </ul>
-          {conns.issues.filter((i) => i.severity !== "info").length > 0 && (
-            <p className="mt-3 text-sm text-amber-800">There are data-quality warnings. <a className="underline" href="/app/connections">Review them</a>.</p>
-          )}
-          {conns.runs.some((r) => r.status === "failed" || r.status === "dead") && (
-            <p className="mt-2 text-sm text-red-700">An update failed. <a className="underline" href="/app/connections">See details</a>.</p>
-          )}
-        </Card>
       )}
     </div>
   );
