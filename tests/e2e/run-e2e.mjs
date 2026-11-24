@@ -171,6 +171,9 @@ try {
 
   await page.click('[data-testid="account-menu"] summary');
   await page.getByText("Signed in as").first().waitFor();
+  await page.mouse.click(5, 600);
+  assert.ok(!(await page.locator('[data-testid="account-menu"]').evaluate((d) => d.open)), "account menu closes on outside click");
+  await page.click('[data-testid="account-menu"] summary');
   assert.ok(await page.locator('[data-testid="account-menu"]').getByText(email).first().isVisible(), "header shows the signed-in email");
   await page.click('a:has-text("Account settings")');
   await page.waitForURL(/\/app\/account$/);
@@ -181,8 +184,11 @@ try {
   step("advanced admin section shows registry/jobs/usage");
 
   await page.goto(`${BASE}/app`);
+  assert.equal(await page.locator('button:has-text("Delete company")').count(), 0, "no delete button in the company header");
+  await page.click('nav[aria-label="Company"] a:has-text("Settings")');
+  await page.waitForURL(/\/app\/settings$/);
   await page.click('button:has-text("Delete company")');
-  await page.getByText("will be permanently deleted from the database").waitFor();
+  await page.locator("dialog[open]").getByText("will be permanently deleted from the database").waitFor();
   const confirmBtn = page.locator('button:has-text("Delete company and its data")');
   assert.ok(await confirmBtn.isDisabled(), "delete stays disabled until the name is typed");
   await page.fill('input[name="confirm_name"]', "Sunrise Heating & Air (demo)");
@@ -190,7 +196,7 @@ try {
   await confirmBtn.click();
   await page.waitForURL(/deleted=1/);
   await page.getByText("No companies yet").waitFor();
-  step("delete company from inside it: warning, typed name, company removed");
+  step("delete company from its Settings: warning, typed name, company removed");
 
   await page.click('[data-testid="account-menu"] summary');
   await page.click('[data-testid="account-menu"] button:has-text("Log out")');

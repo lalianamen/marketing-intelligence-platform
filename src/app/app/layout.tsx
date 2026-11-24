@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
         <div className="mx-auto max-w-7xl px-4 empty:hidden [&:has(>*)]:pb-2">
-          <AppNav company={ctx.company ? { id: ctx.company.id, name: ctx.company.name } : null} canDelete={["owner", "admin"].includes(ctx.workspace.role)} />
+          <AppNav company={ctx.company ? { name: ctx.company.name } : null} />
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
