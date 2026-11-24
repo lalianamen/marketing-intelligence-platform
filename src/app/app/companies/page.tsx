@@ -2,6 +2,7 @@ import { getAppContext } from "@/server/appContext";
 import { getUser } from "@/server/supabase/server";
 import { dataSpaceStatus, type DataSpaceStatus } from "@/server/companyStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { SubmitButton } from "@/components/SubmitButton";
 import { Badge, Button, Card, EmptyState, Field, Notice } from "@/components/ui";
 import { createCompanyAction, retryProvisioningAction } from "../actions";
 import { BUSINESS_PROFILES, BUSINESS_TYPES, profileFor } from "@/lib/businessTypes";
@@ -92,7 +93,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
               </select>
               <span className="mt-1 block text-xs text-gray-500">Used for daily reports and the nightly update time.</span>
             </label>
-            <Button>Add company</Button>
+            <SubmitButton pendingText="Adding…">Add company</SubmitButton>
           </form>
         ) : (
           <p className="text-sm text-gray-600">Your role cannot add companies.</p>

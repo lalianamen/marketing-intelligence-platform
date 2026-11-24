@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { confirmCsvImportAction, type CsvPreviewState, uploadCsvAction } from "@/app/app/actions";
+import { SubmitButton } from "./SubmitButton";
 
 const initial: CsvPreviewState = { status: "idle" };
 
@@ -64,9 +65,9 @@ export function CsvUploader({ companyId, companyName }: { companyId: string; com
           {state.uploadId && (
             <form action={confirmCsvImportAction} className="flex items-center gap-3">
               <input type="hidden" name="upload_id" value={state.uploadId} />
-              <button className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white">
+              <SubmitButton pendingText="Importing…">
                 {state.status === "duplicate" ? "This exact file was uploaded before — import again" : "Import these rows"}
-              </button>
+              </SubmitButton>
               <span className="text-xs text-gray-500">Re-importing replaces numbers for the same day, source and campaign. Nothing is double counted.</span>
             </form>
           )}
