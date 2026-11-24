@@ -2,8 +2,8 @@ import { getAppContext } from "@/server/appContext";
 import { getUser } from "@/server/supabase/server";
 import { googleOAuthConfigured, loadConfig } from "@/server/config";
 import { Badge, Button, Card, Field, Notice } from "@/components/ui";
-import { deleteCompanyAction, renameWorkspaceAction, updateCompanyAction } from "../actions";
-import { SubmitButton } from "@/components/SubmitButton";
+import { renameWorkspaceAction, updateCompanyAction } from "../actions";
+import { DeleteCompanyButton } from "@/components/DeleteCompanyButton";
 import { BUSINESS_PROFILES, BUSINESS_TYPES } from "@/lib/businessTypes";
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string }> }) {
@@ -73,16 +73,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <section className="rounded-xl border border-red-200 bg-white p-5" data-testid="delete-company">
           <h2 className="text-base font-semibold text-red-800">Delete company “{ctx.company.name}”</h2>
           <p className="mt-1 text-sm text-gray-700">
-            This permanently deletes the company, its private data space with all imported and synced data, its connections and stored sign-ins. It cannot be undone. Other companies are not affected.
+            All data of this company will be permanently deleted from the database: its data space with every imported and synced number, uploaded files, connections and stored sign-ins. It cannot be undone.
           </p>
-          <form action={deleteCompanyAction} className="mt-3 flex flex-wrap items-end gap-3">
-            <input type="hidden" name="company_id" value={ctx.company.id} />
-            <label className="block">
-              <span className="text-sm font-medium text-gray-800">Type the company name to confirm</span>
-              <input name="confirm_name" required autoComplete="off" placeholder={ctx.company.name} className="mt-1 block w-72 rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            </label>
-            <SubmitButton pendingText="Deleting…" variant="danger">Delete company</SubmitButton>
-          </form>
+          <div className="mt-3"><DeleteCompanyButton companyId={ctx.company.id} companyName={ctx.company.name} /></div>
         </section>
       )}
 

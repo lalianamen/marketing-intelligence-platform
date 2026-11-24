@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { DeleteCompanyButton } from "./DeleteCompanyButton";
 
 const COMPANY_ITEMS = [
   { href: "/app", label: "Overview" },
@@ -13,7 +14,7 @@ const COMPANY_ITEMS = [
  * Two levels: the Companies list (no company menu), and inside a company its
  * own menu with a way back to the list.
  */
-export function AppNav({ company }: { company: { name: string } | null }) {
+export function AppNav({ company, canDelete }: { company: { id: string; name: string } | null; canDelete: boolean }) {
   const path = usePathname();
   const onList = path.startsWith("/app/companies");
   if (onList || !company) return null;
@@ -36,6 +37,11 @@ export function AppNav({ company }: { company: { name: string } | null }) {
           );
         })}
       </nav>
+      {canDelete && (
+        <div className="ml-auto">
+          <DeleteCompanyButton companyId={company.id} companyName={company.name} />
+        </div>
+      )}
     </div>
   );
 }

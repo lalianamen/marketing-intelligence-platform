@@ -175,6 +175,18 @@ try {
   await page.screenshot({ path: `${OUT}/07-settings-advanced.png`, fullPage: true });
   step("advanced admin section shows registry/jobs/usage");
 
+  await page.goto(`${BASE}/app`);
+  await page.click('button:has-text("Delete company")');
+  await page.getByText("will be permanently deleted from the database").waitFor();
+  const confirmBtn = page.locator('button:has-text("Delete company and its data")');
+  assert.ok(await confirmBtn.isDisabled(), "delete stays disabled until the name is typed");
+  await page.fill('input[name="confirm_name"]', "Sunrise Heating & Air (demo)");
+  await page.screenshot({ path: `${OUT}/08-delete-dialog.png`, fullPage: true });
+  await confirmBtn.click();
+  await page.waitForURL(/deleted=1/);
+  await page.getByText("No companies yet").waitFor();
+  step("delete company from inside it: warning, typed name, company removed");
+
   await page.click('button:has-text("Log out")');
   await page.waitForURL(/login/);
   await page.goto(`${BASE}/app`);
