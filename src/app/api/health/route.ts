@@ -3,17 +3,15 @@ import { type NextRequest, NextResponse } from "next/server";
 import { loadConfig } from "@/server/config";
 import { getPool } from "@/server/db";
 
-// Operator health check (CRON_SECRET-protected): verifies DB connectivity and
-// reports non-secret configuration flags. Never returns secret values.
+// Health check. Public: {status: ok|error} only. With CRON_SECRET: DB detail and
+// non-secret configuration flags. Never returns secret values.
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET ?? "";
   const got = Buffer.from(req.headers.get("authorization") ?? "");
   const want = Buffer.from(`Bearer ${secret}`);
-  if (secret.length < 16 || got.length !== want.length || !timingSafeEqual(got, want)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const operator = secret.length >= 16 && got.length === want.length && timingSafeEqual(got, want);
   const cfg = loadConfig();
   let db: string;
   try {
@@ -22,6 +20,8 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     db = `error: ${(err as { code?: string }).code ?? "unknown"} ${(err as Error).message.slice(0, 120)}`;
   }
+  // Public callers only learn whether the service works; details need CRON_SECRET.
+  if (!operator) return NextResponse.json({ status: db.startsWith("ok") ? "ok" : "error" }, { status: db.startsWith("ok") ? 200 : 503 });
   return NextResponse.json({
     db,
     warehouseMode: cfg.warehouseMode,
