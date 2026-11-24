@@ -106,8 +106,11 @@ try {
   step("clicking a company opens its dashboard with its own menu");
 
   await page.goto(`${BASE}/app/connections`);
+  await page.getByText("No connectors yet").waitFor();
+  await page.click('a:has-text("+ Add connector") >> nth=0');
+  await page.waitForURL(/\/app\/connections\/new$/);
   assert.match(await page.getByTestId("recommended-sources").innerText(), /Google Local Services Ads/);
-  step("connections page recommends sources for a local service business");
+  step("Data Connections → + Add connector shows sources recommended for a local service business");
 
   await page.goto(`${BASE}/app/connections/csv`);
   await page.setInputFiles('input[name="file"]', "public/sample-marketing-data.csv");
@@ -154,7 +157,7 @@ try {
   assert.equal(forged.status(), 404);
   step("export with a forged company id → 404");
 
-  await page.goto(`${BASE}/app/connections`);
+  await page.goto(`${BASE}/app/connections/new`);
   await page.locator('form:has(input[name="provider_id"][value="google_ads"]) button:has-text("Try with sample data")').click();
   await page.waitForURL(/sample=1/);
   await waitFor(async () => {
