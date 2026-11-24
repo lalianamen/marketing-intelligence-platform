@@ -194,6 +194,21 @@ export class BigQueryWarehouse implements Warehouse {
     }
   }
 
+  async deleteDataset(ref: DatasetRef): Promise<"deleted" | "not_found"> {
+    assertSafeProjectId(ref.projectId);
+    assertSafeIdentifier(ref.datasetId, "dataset id");
+    try {
+      // force: also deletes the dataset's tables. Deleting never bills, so it is
+      // allowed even when BIGQUERY_BILLING_APPROVED is not set.
+      await this.client.dataset(ref.datasetId, { projectId: ref.projectId }).delete({ force: true });
+      return "deleted";
+    } catch (err) {
+      const mapped = mapBigQueryError(err);
+      if (mapped.code === "not_found") return "not_found";
+      throw mapped;
+    }
+  }
+
   async ensureSchema(ref: DatasetRef, version: number = CURRENT_SCHEMA_VERSION): Promise<number> {
     if (version !== 1) throw new WarehouseError("invalid", `unknown schema version ${version}`);
     for (const ddl of schemaDdl((t) => this.fq(ref, t))) {

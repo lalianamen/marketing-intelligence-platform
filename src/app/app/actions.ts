@@ -31,6 +31,8 @@ function friendly(message: string | undefined): string {
   if (/not found/i.test(message)) return "Not found, or you do not have access.";
   if (/already provisioned/i.test(message)) return "This company's data space is already ready.";
   if (/disconnected/i.test(message)) return "This connection is disconnected.";
+  if (/confirmation name/i.test(message)) return "The name you typed does not match the company name. Nothing was deleted.";
+  if (/company busy/i.test(message)) return "The company's data space is still being prepared. Try again in a minute.";
   return "Something went wrong. Please try again.";
 }
 
@@ -177,4 +179,19 @@ export async function confirmCsvImportAction(form: FormData): Promise<void> {
   if (r.error) redirect("/app/connections/csv?error=" + encodeURIComponent(friendly(r.error.message)));
   kickJobs();
   redirect("/app/connections?imported=1");
+}
+
+export async function deleteCompanyAction(form: FormData): Promise<void> {
+  const { supabase } = await requireUser();
+  const companyId = String(form.get("company_id") ?? "");
+  const r = await supabase.rpc("delete_company", {
+    p_company_id: companyId,
+    p_confirm_name: String(form.get("confirm_name") ?? "").slice(0, 200),
+  });
+  if (r.error) redirect("/app/settings?error=" + encodeURIComponent(friendly(r.error.message)));
+  const store = await cookies();
+  if (store.get(COMPANY_COOKIE)?.value === companyId) store.delete(COMPANY_COOKIE);
+  revalidatePath("/app", "layout");
+  kickJobs();
+  redirect("/app/companies?deleted=1");
 }

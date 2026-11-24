@@ -4,6 +4,7 @@ import { redact } from "../server/crypto";
 import { withTransaction } from "../server/db";
 import { claimJob, completeJob, failJob, recoverExpiredLeases } from "../server/jobs/queue";
 import { ProvisioningError, provisionCompanyDataset, reconcileProvisioning } from "../server/provisioning/provision";
+import { deleteCompanyDataset, reconcileDeletions } from "../server/provisioning/deprovision";
 import { ensureConfiguredProject } from "../server/registry/registry";
 import { enqueueDueSyncs } from "../server/scheduling/schedule";
 import { markConnectionFailure, processSyncRun, SyncError, type SyncDeps } from "../server/sync/runSync";
@@ -42,8 +43,16 @@ export async function runProvisioningOnce(deps: WorkerDeps): Promise<"idle" | "s
   const log = deps.log ?? jsonLog;
   const job = await claimJob(deps.pool, "provisioning_jobs", deps.workerId, deps.leaseSeconds ?? 300);
   if (!job) return "idle";
-  log({ level: "info", msg: "provisioning.start", job_id: job.id, company_id: job.company_id, attempt: job.attempts });
+  const kind = job.kind === "delete_dataset" ? "delete_dataset" : "create_dataset";
+  log({ level: "info", msg: "provisioning.start", job_id: job.id, company_id: job.company_id, kind, attempt: job.attempts });
   try {
+    if (kind === "delete_dataset") {
+      const del = await deleteCompanyDataset(deps.pool, job, { cfg: deps.cfg, getWarehouse: deps.getWarehouse });
+      // The job row is gone with the company (cascade); completing it is a no-op then.
+      await completeJob(deps.pool, "provisioning_jobs", job, deps.workerId);
+      log({ level: "info", msg: "company.deleted", job_id: job.id, company_id: job.company_id, dataset_dropped: del.dropped });
+      return "succeeded";
+    }
     const res = await provisionCompanyDataset(deps.pool, job, { cfg: deps.cfg, getWarehouse: deps.getWarehouse });
     await completeJob(deps.pool, "provisioning_jobs", job, deps.workerId);
     log({ level: "info", msg: "provisioning.succeeded", job_id: job.id, company_id: job.company_id, created: res.created });
@@ -54,7 +63,7 @@ export async function runProvisioningOnce(deps: WorkerDeps): Promise<"idle" | "s
         ? { code: err.code, message: err.message, retryable: err.retryable }
         : { code: "unexpected", message: (err as Error).message, retryable: true };
     const outcome = await failJob(deps.pool, "provisioning_jobs", job, deps.workerId, e);
-    if (outcome.status !== "queued") {
+    if (outcome.status !== "queued" && kind === "create_dataset") {
       await deps.pool.query(
         `update public.analytics_resources set status = 'failed', updated_at = now() where company_id = $1 and status = 'preparing'`,
         [job.company_id],
@@ -98,7 +107,7 @@ export async function runSyncOnce(deps: WorkerDeps): Promise<"idle" | "succeeded
 export async function runMaintenanceOnce(deps: WorkerDeps): Promise<{ recovered: number; reconciled: number; enqueued: number }> {
   const recovered =
     (await recoverExpiredLeases(deps.pool, "provisioning_jobs")) + (await recoverExpiredLeases(deps.pool, "sync_runs"));
-  const reconciled = await reconcileProvisioning(deps.pool);
+  const reconciled = (await reconcileProvisioning(deps.pool)) + (await reconcileDeletions(deps.pool));
   const enqueued = await withTransaction((c) => enqueueDueSyncs(c, deps.now?.() ?? new Date()), deps.pool);
   if (recovered || reconciled || enqueued) {
     (deps.log ?? jsonLog)({ level: "info", msg: "maintenance", recovered, reconciled, enqueued });

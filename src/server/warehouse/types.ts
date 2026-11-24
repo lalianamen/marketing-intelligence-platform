@@ -32,6 +32,8 @@ export interface Warehouse {
   readonly isSimulated: boolean;
   ensureDataset(ref: DatasetRef, labels: DatasetLabels): Promise<"created" | "exists">;
   getDatasetLabels(ref: DatasetRef): Promise<Partial<DatasetLabels> | null>;
+  /** Drops the dataset and all its tables. Returns 'not_found' if it is already gone. Callers must verify labels first. */
+  deleteDataset(ref: DatasetRef): Promise<"deleted" | "not_found">;
   ensureSchema(ref: DatasetRef, version: number): Promise<number>;
   insertRaw(ref: DatasetRef, rows: RawRecord[]): Promise<{ written: number; stats: QueryStats }>;
   upsertNormalized(ref: DatasetRef, rows: NormalizedRow[]): Promise<{ written: number; stats: QueryStats }>;

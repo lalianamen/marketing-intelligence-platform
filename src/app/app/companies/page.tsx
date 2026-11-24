@@ -16,7 +16,7 @@ const STATUS: Record<DataSpaceStatus, { tone: "gray" | "blue" | "green" | "red";
 
 const TIMEZONES = ["America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York", "America/Phoenix", "Pacific/Honolulu", "America/Anchorage", "Europe/London", "Europe/Berlin", "Asia/Yerevan", "Asia/Tokyo", "Australia/Sydney", "UTC"];
 
-export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ error?: string; created?: string }> }) {
+export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ error?: string; created?: string; deleted?: string }> }) {
   const sp = await searchParams;
   const ctx = await getAppContext();
   const { supabase } = await getUser();
@@ -29,6 +29,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
       <div className="space-y-4 lg:col-span-2">
         <h1 className="text-2xl font-semibold">Companies</h1>
         {sp.error && <Notice tone="red">{sp.error}</Notice>}
+        {sp.deleted && <Notice tone="green">Company deleted. Its data space is being removed in the background.</Notice>}
         {sp.created && <Notice tone="green">Company added. We are preparing its private data space — this page updates automatically.</Notice>}
         <AutoRefresh active={pending} />
         {ctx.companies.length === 0 ? (

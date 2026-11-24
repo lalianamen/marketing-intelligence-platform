@@ -111,6 +111,18 @@ export class LocalWarehouse implements Warehouse {
     }
   }
 
+  async deleteDataset(ref: DatasetRef): Promise<"deleted" | "not_found"> {
+    const s = schema(ref);
+    try {
+      const exists = await this.pool.query("select 1 from pg_namespace where nspname = $1", [ref.datasetId]);
+      if (!exists.rowCount) return "not_found";
+      await this.pool.query(`drop schema if exists ${s} cascade`);
+      return "deleted";
+    } catch (err) {
+      mapPgError(err);
+    }
+  }
+
   async ensureSchema(ref: DatasetRef, version: number = CURRENT_SCHEMA_VERSION): Promise<number> {
     const s = schema(ref);
     if (version !== 1) throw new WarehouseError("invalid", `unknown schema version ${version}`);

@@ -66,9 +66,20 @@ buffer (GA4 60 min, Ads 30 min) + 0–15 min deterministic jitter. At most 4 con
 
 - The warehouse keeps full history. Syncs MERGE by grain and never truncate to a rolling window.
 - Local simulated warehouse: one schema per dataset in database `mip_warehouse`.
-- **No automatic deletion** on user deletion, failed provisioning, disconnect or plan change. A future deletion/export
-  workflow must: verify the requester, record intent in `audit_logs`, export on request, apply a grace period, then delete the
-  dataset (BigQuery `DELETE dataset … CASCADE`), registry rows and CSV uploads, and keep a minimal deletion record.
+- **No automatic deletion** on user deletion, failed provisioning, disconnect or plan change.
+- **Company deletion (manual, owner/admin only)** — Settings → "Delete company", confirmed by typing the company name.
+  1. `delete_company` RPC: marks the company `deleting` (hidden from the app; `can_manage_company` is false, so no new
+     syncs, uploads or edits), cancels queued runs, disables schedules, deletes stored OAuth tokens, writes
+     `company.deletion_requested` to `audit_logs`, queues a `provisioning_jobs` row with `kind = 'delete_dataset'`.
+     Refused with "busy" while the dataset is still being created.
+  2. Worker (`src/server/provisioning/deprovision.ts`): waits while a sync for the company is running, checks that the
+     dataset labels name this company (never drops another tenant's dataset; a mismatch fails the job for manual
+     review), drops the dataset (BigQuery `delete({ force: true })`, local `drop schema … cascade`), deletes the registry
+     row, decrements `cloud_projects.dataset_count`, writes `company.deleted`, deletes the company row (cascades to
+     connections, uploads, runs, settings, jobs).
+  3. Maintenance re-queues companies stuck in `deleting` for more than 10 minutes, except label mismatches.
+  There is no grace period and no export step: deletion is immediate and cannot be undone. `audit_logs` and
+  `usage_events` keep `company_id` (no foreign key) as the deletion record.
 - `csv_uploads.rows` keeps validated rows for re-import and provenance. A retention period for it is not yet defined.
 
 ## Troubleshooting

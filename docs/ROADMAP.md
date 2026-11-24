@@ -8,7 +8,7 @@ block them.
 - Verify GA4 and Google Ads live end-to-end in a dev project, and add an account picker after consent.
 - First real BigQuery integration run in a dedicated dev project (with cost approval). Separate read/write service accounts.
 - Team invitations (workspace members, client viewers). Tables and RLS exist already.
-- XLSX export. Retention/deletion workflow. Cloud Billing export reconciliation.
+- XLSX export. Retention policy, account deletion and data export (company deletion is built). Cloud Billing export reconciliation.
 - Deployment design (Vercel for the web app; worker on Cloud Run jobs or Cloud Tasks) with secret management.
 
 ## Phase 2: more sources

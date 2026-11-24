@@ -75,8 +75,9 @@ Exported text cells that start with `= + - @ TAB CR` get a `'` prefix (spreadshe
 
 - Phase 1 stores aggregated marketing metrics only: no call recordings, no personal lead data, no raw GA4 events.
   The CSV template has no personal-data columns. Users are told not to upload personal data.
-- Nothing deletes warehouse data automatically: not user deletion, failed provisioning or disconnecting. A deletion/export
-  workflow must be designed and authorized separately (see `docs/OPERATIONS.md#retention`).
+- Nothing deletes warehouse data automatically: not user deletion, failed provisioning or disconnecting.
+- A workspace owner/admin can delete a company (typed-name confirmation). Its dataset is dropped only after its labels
+  are verified to name that company; see `docs/OPERATIONS.md#retention`. Account deletion and data export are not built yet.
 - Audit log of user and worker actions (`audit_logs`).
 
 ## Threat summary
