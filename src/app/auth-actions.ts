@@ -16,6 +16,18 @@ async function allow(bucket: string, limit: number, windowSeconds: number): Prom
   return r.rows[0]?.ok ?? false;
 }
 
+function signUpErrorMessage(error: { message: string; code?: string; status?: number }): string {
+  const code = error.code ?? "";
+  if (code === "email_address_invalid") return "This email address can't be used. Please use a different address.";
+  if (code === "email_address_not_authorized" || /not authorized/i.test(error.message))
+    return "We can't send a confirmation email to this address yet (email service is in setup mode). Please contact support.";
+  if (code === "over_email_send_rate_limit" || code === "over_request_rate_limit" || error.status === 429)
+    return "Too many sign-up emails were sent recently. Please wait a little and try again.";
+  if (code === "weak_password") return "Please choose a stronger password (at least 10 characters with letters and numbers).";
+  if (/sending confirmation email|smtp|mail/i.test(error.message)) return "We couldn't send the confirmation email. Please try again later.";
+  return "Sign-up failed. Please try again.";
+}
+
 function back(path: string, params: Record<string, string>): never {
   redirect(`${path}?${new URLSearchParams(params).toString()}`);
 }
@@ -34,7 +46,11 @@ export async function signUpAction(form: FormData): Promise<void> {
     options: { emailRedirectTo: `${loadConfig().appUrl}/auth/confirm` },
   });
   // Same response whether or not the email already exists (no account enumeration).
-  if (error && !/already registered/i.test(error.message)) back("/signup", { error: "Sign-up failed. Please try again." });
+  if (error && !/already registered/i.test(error.message)) {
+    // Log the provider's error code (no secrets, no password) so operators can diagnose.
+    console.error(JSON.stringify({ level: "warn", msg: "signup_failed", code: (error as { code?: string }).code ?? null, status: (error as { status?: number }).status ?? null, message: error.message.slice(0, 200) }));
+    back("/signup", { error: signUpErrorMessage(error) });
+  }
   redirect(`/check-email?email=${encodeURIComponent(email)}`);
 }
 
