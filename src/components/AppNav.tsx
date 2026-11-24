@@ -16,7 +16,7 @@ const COMPANY_ITEMS = [
  */
 export function AppNav({ company, canDelete }: { company: { id: string; name: string } | null; canDelete: boolean }) {
   const path = usePathname();
-  const onList = path.startsWith("/app/companies");
+  const onList = path.startsWith("/app/companies") || path.startsWith("/app/account");
   if (onList || !company) return null;
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

@@ -22,7 +22,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
   const canCreate = ["owner", "admin", "member"].includes(ctx.workspace.role);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Companies</h1>
         {canCreate && <LinkButton href="/app/companies/new">+ Add company</LinkButton>}
@@ -37,7 +37,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
           {canCreate && <div className="mt-4"><LinkButton href="/app/companies/new">+ Add company</LinkButton></div>}
         </EmptyState>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {ctx.companies.map((c) => {
             const s = statuses[c.id]!;
             const meta = STATUS[s.status];

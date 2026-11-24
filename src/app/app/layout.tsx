@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { getAppContext } from "@/server/appContext";
 import { AppNav } from "@/components/AppNav";
+import { AccountMenu } from "@/components/AccountMenu";
 
 export const dynamic = "force-dynamic";
 
@@ -16,9 +17,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           </div>
           <div className="flex items-center gap-4">
             <a href="/app/companies" className="text-sm text-gray-600 hover:text-gray-900">Companies</a>
-            <form action="/auth/signout" method="post">
-              <button className="text-sm text-gray-600 hover:text-gray-900">Log out</button>
-            </form>
+            <AccountMenu email={ctx.email} workspace={ctx.workspace.name} />
           </div>
         </div>
         <div className="mx-auto max-w-7xl px-4 empty:hidden [&:has(>*)]:pb-2">

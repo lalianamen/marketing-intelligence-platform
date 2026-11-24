@@ -169,7 +169,12 @@ try {
   step("sample Google Ads connection syncs and is labelled SIMULATED everywhere");
   await page.screenshot({ path: `${OUT}/06-analytics-with-sample.png`, fullPage: true });
 
-  await page.goto(`${BASE}/app/settings`);
+  await page.click('[data-testid="account-menu"] summary');
+  await page.getByText("Signed in as").first().waitFor();
+  assert.ok(await page.locator('[data-testid="account-menu"]').getByText(email).first().isVisible(), "header shows the signed-in email");
+  await page.click('a:has-text("Account settings")');
+  await page.waitForURL(/\/app\/account$/);
+  step("account menu shows the signed-in email and opens Account settings");
   await page.click("summary:has-text('Advanced')");
   await page.getByText("Resource registry").waitFor();
   await page.screenshot({ path: `${OUT}/07-settings-advanced.png`, fullPage: true });
@@ -187,7 +192,8 @@ try {
   await page.getByText("No companies yet").waitFor();
   step("delete company from inside it: warning, typed name, company removed");
 
-  await page.click('button:has-text("Log out")');
+  await page.click('[data-testid="account-menu"] summary');
+  await page.click('[data-testid="account-menu"] button:has-text("Log out")');
   await page.waitForURL(/login/);
   await page.goto(`${BASE}/app`);
   assert.match(page.url(), /\/login$/);

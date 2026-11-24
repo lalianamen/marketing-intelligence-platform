@@ -98,7 +98,7 @@ export async function renameWorkspaceAction(form: FormData): Promise<void> {
   const { supabase } = await requireUser();
   const name = String(form.get("name") ?? "").trim().slice(0, 120);
   if (name) await supabase.from("workspaces").update({ name }).eq("id", String(form.get("workspace_id") ?? ""));
-  redirect("/app/settings?saved=1");
+  redirect("/app/account?saved=1");
 }
 
 export async function updateCompanyAction(form: FormData): Promise<void> {
