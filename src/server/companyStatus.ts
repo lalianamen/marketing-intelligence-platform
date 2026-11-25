@@ -88,6 +88,7 @@ export const PROVIDER_LABEL: Record<string, string> = {
   csv: "CSV import",
   ga4: "Google Analytics 4",
   google_ads: "Google Ads",
+  google_search_console: "Google Search Console",
 };
 
 export function modeBadge(mode: string): { tone: "green" | "amber" | "blue"; text: string } {

@@ -31,6 +31,12 @@ export interface ProviderDailyRecord {
   raw: Record<string, unknown>;
   /** Distinguishes raw rows that share a campaign/day (e.g. split by extra breakdowns). */
   rawKey?: string;
+  /**
+   * "table": a row of the connector's table only (not counted on the dashboard);
+   * "dashboard": the day's true total only (not shown as a table row).
+   * Used when table rows do not add up to the total (Search Console hides rare queries).
+   */
+  role?: "table" | "dashboard";
 }
 
 export interface FetchContext {
@@ -43,7 +49,7 @@ export interface FetchContext {
   now: Date;
   signal?: AbortSignal;
   /** Per-connection options, e.g. the GA4 groups the user switched on. */
-  options?: { ga4Reports?: string[] };
+  options?: { ga4Reports?: string[]; columns?: string[] };
   /**
    * GA4 only: days already in GA4's own BigQuery export (ADR 0006) and how to read them.
    * Returns rows with the requested GA4 columns by name, values as strings.
@@ -65,7 +71,7 @@ export interface FetchResult {
 }
 
 export interface Connector {
-  readonly providerId: "ga4" | "google_ads";
+  readonly providerId: "ga4" | "google_ads" | "google_search_console";
   readonly origin: Origin;
   readonly mode: "live" | "simulated";
   readonly requiredScopes: readonly string[];

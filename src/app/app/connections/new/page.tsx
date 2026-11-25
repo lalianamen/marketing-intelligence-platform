@@ -16,7 +16,10 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
   const oauthReady = googleOAuthConfigured(cfg);
   // Only what can be connected today. Sample data is offered only where live Google sign-in is not configured
   // (local development); Google Ads only once its API access for real accounts is approved (GOOGLE_ADS_ENABLED).
-  const providersNow = (["ga4", "google_ads"] as const).filter((p) => p === "ga4" || cfg.google.adsEnabled || !oauthReady);
+  // Search Console has no sample data: shown only when live Google sign-in works.
+  const providersNow = (["ga4", "google_search_console", "google_ads"] as const).filter((p) =>
+    p === "ga4" ? true : p === "google_search_console" ? oauthReady : cfg.google.adsEnabled || !oauthReady,
+  );
   const live = (p: string) => connections.find((c) => c.provider_id === p && c.mode === "live");
   const sample = (p: string) => connections.find((c) => c.provider_id === p && c.mode === "simulated");
 
@@ -41,7 +44,11 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
         {providersNow.map((p) => (
           <Card key={p} title={PROVIDER_LABEL[p]} actions={live(p) ? <Badge tone="green">Connected</Badge> : sample(p) ? <Badge tone="amber">Sample data on</Badge> : <Badge tone="gray">Not connected</Badge>}>
             <p className="text-sm text-gray-600">
-              {p === "ga4" ? "Daily website report numbers: sessions, key events and GA4-reported revenue." : "Daily campaign numbers: cost, impressions, clicks and Google Ads conversions."}
+              {p === "ga4"
+                ? "Daily website report numbers: sessions, key events and GA4-reported revenue."
+                : p === "google_search_console"
+                ? "How your site shows up in Google Search: clicks, impressions and position by search query, page, country and device."
+                : "Daily campaign numbers: cost, impressions, clicks and Google Ads conversions."}
             </p>
             <div className="mt-4 space-y-2">
               {oauthReady ? (
@@ -50,9 +57,9 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
                     <input type="hidden" name="provider" value={p} />
                     <input type="hidden" name="company" value={company.id} />
                     <Button disabled={space.status !== "ready"}>Connect with Google</Button>
-                    <p className="mt-2 text-xs text-gray-500">Sign in with Google and we find your {p === "ga4" ? "Analytics properties" : "Google Ads accounts"} automatically.</p>
+                    <p className="mt-2 text-xs text-gray-500">Sign in with Google and we find your {p === "ga4" ? "Analytics properties" : p === "google_search_console" ? "Search Console sites" : "Google Ads accounts"} automatically.</p>
                   </form>
-                  <details className="text-xs text-gray-500">
+                  {p !== "google_search_console" && <details className="text-xs text-gray-500">
                     <summary className="cursor-pointer">Enter the ID manually instead</summary>
                     <form action="/api/oauth/google/start" method="get" className="mt-2 space-y-2">
                       <input type="hidden" name="provider" value={p} />
@@ -63,7 +70,7 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
                       </label>
                       <Button variant="secondary" disabled={space.status !== "ready"}>Connect this ID</Button>
                     </form>
-                  </details>
+                  </details>}
                 </>
               ) : (
                 <p className="text-xs text-gray-500">

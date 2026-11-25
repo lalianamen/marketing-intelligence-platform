@@ -97,7 +97,7 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
       status: string;
       external_account_id: string | null;
       data_as_of: string | null;
-      settings: { ga4_reports?: string[] } | null;
+      settings: { ga4_reports?: string[]; columns?: string[] } | null;
     }>(`select * from public.company_connections where id = $1 and company_id = $2`, [run.connection_id, run.company_id])
   ).rows[0];
   if (!conn) throw new SyncError("connection_missing", "connection not found", false);
@@ -185,7 +185,7 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
         companyTimezone: company.timezone,
         credentials,
         now,
-        options: { ga4Reports: conn.settings?.ga4_reports ?? [] },
+        options: { ga4Reports: conn.settings?.ga4_reports ?? [], columns: conn.settings?.columns ?? [] },
       });
       apiCalls = fetched.apiCalls;
       if (!fetched.complete) {

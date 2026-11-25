@@ -166,6 +166,18 @@ Google user can read and connects it:
 - "Turn off" or deleting the connector removes the link in GA4 and deletes `analytics_<property>`.
 - State: `public.ga4_export_links` (server only). Code: `src/server/ga4export/`, `src/server/connectors/ga4Admin.ts`.
 
+## Google Search Console (working)
+
+- Same model as GA4: Connect with Google (scope `webmasters.readonly`) → the user's verified sites are listed →
+  setup page (columns, period, schedule) → one table; changing columns asks before deleting and reloading 30 days.
+- Columns (`src/lib/gscCatalog.ts`, saved in `company_connections.settings.columns`): base `date`, `clicks`,
+  `impressions`, `ctr`, `position`; optional `query`, `page`, `country`, `device`. No column limit.
+- Search Analytics API (`searchAnalytics.query`, type web, dataState all, 25,000 rows per page). Search Console hides
+  rare queries, so the dashboard uses a separate per-day total (records with role `dashboard`); table rows have role
+  `table` and are not summed. `ctr` and `position` are per row and never added up. Dates are Pacific Time; the last
+  ~3 days are preliminary and re-read (lookback 4 days).
+- Administrator: enable `searchconsole.googleapis.com` in the OAuth client's Cloud project.
+
 ## Future connectors: design notes, no access promised
 
 | Provider | Notes |

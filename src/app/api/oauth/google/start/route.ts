@@ -7,6 +7,7 @@ import { requireCompanyAccess } from "@/server/auth/authz";
 import { encryptSecret, randomToken, sha256Hex } from "@/server/crypto";
 import { GA4_SCOPE, GOOGLE_ADS_SCOPE, GOOGLE_AUTH_URL } from "@/server/connectors/google";
 import { GA4_EDIT_SCOPE, GA4_MANAGE_USERS_SCOPE } from "@/server/connectors/ga4Admin";
+import { GSC_SCOPE } from "@/server/connectors/searchConsole";
 
 // Starts Google's official consent screen (authorization code + PKCE + state).
 // The user never types a Google password into this app.
@@ -20,10 +21,11 @@ export async function GET(request: NextRequest) {
 
   const provider = url.searchParams.get("provider");
   const companyId = url.searchParams.get("company") ?? "";
-  const account = (url.searchParams.get("account") ?? "").replace(/-/g, "").trim();
-  if (provider !== "ga4" && provider !== "google_ads") return back("Unknown provider.");
+  // Search Console sites are always discovered after sign-in (no typed ID).
+  const account = provider === "google_search_console" ? "" : (url.searchParams.get("account") ?? "").replace(/-/g, "").trim();
+  if (provider !== "ga4" && provider !== "google_ads" && provider !== "google_search_console") return back("Unknown provider.");
   // The ID is optional: without it, the callback lists the user's accounts.
-  if (account && (provider === "ga4" ? !/^\d{1,20}$/.test(account) : !/^\d{10}$/.test(account))) return back("Please enter a valid account ID.");
+  if (account && provider !== "google_search_console" && (provider === "ga4" ? !/^\d{1,20}$/.test(account) : !/^\d{10}$/.test(account))) return back("Please enter a valid account ID.");
 
   const db = getPool();
   let workspaceId: string;
@@ -60,7 +62,7 @@ export async function GET(request: NextRequest) {
     client_id: cfg.google.clientId!,
     redirect_uri: cfg.google.redirectUri,
     response_type: "code",
-    scope: purpose === "ga4_export" ? [GA4_SCOPE, GA4_EDIT_SCOPE, GA4_MANAGE_USERS_SCOPE].join(" ") : provider === "ga4" ? GA4_SCOPE : GOOGLE_ADS_SCOPE,
+    scope: purpose === "ga4_export" ? [GA4_SCOPE, GA4_EDIT_SCOPE, GA4_MANAGE_USERS_SCOPE].join(" ") : provider === "ga4" ? GA4_SCOPE : provider === "google_search_console" ? GSC_SCOPE : GOOGLE_ADS_SCOPE,
     access_type: "offline",
     prompt: "consent select_account",
     include_granted_scopes: "false",

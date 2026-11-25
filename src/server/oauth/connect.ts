@@ -3,9 +3,10 @@ import type { Queryable } from "../db";
 import { encryptSecret } from "../crypto";
 import type { DiscoveredAccount } from "../connectors/google";
 
-export type GoogleProvider = "ga4" | "google_ads";
+export type GoogleProvider = "ga4" | "google_ads" | "google_search_console";
 
 export function defaultAccountName(provider: GoogleProvider, id: string): string {
+  if (provider === "google_search_console") return id;
   return provider === "ga4" ? `GA4 property ${id}` : `Google Ads ${id.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")}`;
 }
 

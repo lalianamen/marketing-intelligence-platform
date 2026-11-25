@@ -9,6 +9,7 @@ import { decryptSecret, encryptSecret, redact, sha256Hex } from "@/server/crypto
 import { type DiscoveredAccount, exchangeCode, GA4_SCOPE, GOOGLE_ADS_SCOPE, listAdsCustomers, listGa4Properties, refreshAccessToken } from "@/server/connectors/google";
 import { GA4_EDIT_SCOPE, GA4_MANAGE_USERS_SCOPE } from "@/server/connectors/ga4Admin";
 import { linkGa4Export } from "@/server/ga4export/link";
+import { GSC_SCOPE, listSearchConsoleSites } from "@/server/connectors/searchConsole";
 import { platformAccessToken, platformServiceAccountEmail } from "@/server/warehouse";
 
 // OAuth callback: validates single-use state bound to the same signed-in user,
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
       [sha256Hex(state), user.id],
     )
   ).rows[0] as
-    | { company_id: string; workspace_id: string; provider_id: "ga4" | "google_ads"; code_verifier_ciphertext: string; external_account_id: string; purpose: string; connection_id: string | null }
+    | { company_id: string; workspace_id: string; provider_id: "ga4" | "google_ads" | "google_search_console"; code_verifier_ciphertext: string; external_account_id: string; purpose: string; connection_id: string | null }
     | undefined;
   if (!st) return back("This connection attempt expired. Please try again.");
   if ((await getCompanyAccess(db, user.id, st.company_id)) !== "manage") return back("Not found, or you do not have access.");
@@ -71,11 +72,11 @@ export async function GET(request: NextRequest) {
     return page(result.status === "failed" ? "export_error=" + encodeURIComponent(result.message) : "export=started");
   }
 
-  const required = st.provider_id === "ga4" ? GA4_SCOPE : GOOGLE_ADS_SCOPE;
+  const required = st.provider_id === "ga4" ? GA4_SCOPE : st.provider_id === "google_search_console" ? GSC_SCOPE : GOOGLE_ADS_SCOPE;
   if (!tokens.scopes.includes(required)) return back("The required permission was not granted. Please tick the box to allow access.");
   if (!tokens.refreshToken) return back("Google did not return a long-lived authorization. Remove the app's access in your Google account and try again.");
   const refreshToken = tokens.refreshToken;
-  const label = st.provider_id === "ga4" ? "Google Analytics" : "Google Ads";
+  const label = st.provider_id === "ga4" ? "Google Analytics" : st.provider_id === "google_search_console" ? "Search Console" : "Google Ads";
 
   // Which accounts can this Google user read? (Skipped when an ID was typed in.)
   let accounts: DiscoveredAccount[];
@@ -87,6 +88,8 @@ export async function GET(request: NextRequest) {
       accounts =
         st.provider_id === "ga4"
           ? await listGa4Properties(accessToken)
+          : st.provider_id === "google_search_console"
+          ? await listSearchConsoleSites(accessToken)
           : await listAdsCustomers(accessToken, { apiVersion: cfg.google.adsApiVersion, developerToken: cfg.google.adsDeveloperToken });
     } catch (err) {
       const e = err as ConnectorError;
@@ -103,6 +106,8 @@ export async function GET(request: NextRequest) {
   if (accounts.length === 0) {
     return back(st.provider_id === "ga4"
       ? "This Google account has no Google Analytics 4 properties. Sign in with the Google account that has access to your GA4."
+      : st.provider_id === "google_search_console"
+      ? "This Google account has no verified sites in Search Console. Sign in with the Google account that has access to your site in Search Console."
       : "This Google account has no Google Ads accounts. Sign in with the Google account that has access to your Google Ads.");
   }
 

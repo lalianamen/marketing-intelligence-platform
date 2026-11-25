@@ -95,7 +95,9 @@ export function normalizeProviderRecords(
     };
     const key = rowKey(base);
     const existing = byKey.get(key);
-    if (existing) {
+    if (rec.role === "table") {
+      // Table-only row: the dashboard uses the day's total record instead.
+    } else if (existing) {
       for (const f of ["impressions", "clicks", "spend", "sessions", "conversions", "leads", "attributed_revenue", "billed_revenue"] as const) {
         const a = existing[f];
         const b = rec.metrics[f];
@@ -116,6 +118,7 @@ export function normalizeProviderRecords(
         updated_at: updatedAt,
       });
     }
+    if (rec.role === "dashboard") continue;
     const rawGrain = rec.rawKey === undefined ? key : `${key}\u001f${rec.rawKey}`;
     const occurrence = seen.get(rawGrain) ?? 0;
     seen.set(rawGrain, occurrence + 1);

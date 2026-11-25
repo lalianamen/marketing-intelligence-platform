@@ -4,7 +4,8 @@ import { AccessDeniedError, getCompanyAccess } from "../auth/authz";
 import { getResourceForCompany, toDatasetRef } from "../registry/registry";
 import { computeNextRun } from "../scheduling/schedule";
 import type { RawRecord } from "../../lib/model";
-import { GA4_OPTIONAL_FIELDS, GA4_OPTIONAL_GROUPS, ga4SelectionProblem, isGa4SelectionItem, sanitizeGa4Selection } from "../../lib/ga4Catalog";
+import { GA4_OPTIONAL_FIELDS, GA4_OPTIONAL_GROUPS, sanitizeGa4Selection } from "../../lib/ga4Catalog";
+import { columnCatalog, isCatalogItem } from "../../lib/columnCatalog";
 import { type RawColumn, type RawTableParams, rawColumnsFor } from "../../lib/rawTable";
 import type { Warehouse, WarehouseProvider } from "../warehouse/types";
 
@@ -24,7 +25,7 @@ export interface ConnectionDetail {
   data_as_of: string | null;
   last_error: string | null;
   created_at: string;
-  settings: { ga4_reports?: string[] };
+  settings: { ga4_reports?: string[]; columns?: string[] };
   /** null while the connector is in setup (nothing loads yet). */
   activated_at: string | null;
   schedule: { frequency: "daily" | "manual"; local_time: string; timezone: string; enabled: boolean; next_run_at: string | null } | null;
@@ -208,7 +209,8 @@ export async function setGa4Report(
 }
 
 /**
- * Saves the whole chosen set of GA4 fields at once (the user picks first, then saves).
+ * Saves the whole chosen set of columns at once (the user picks first, then saves).
+ * Works for every connector with a column catalog (GA4, Search Console).
  * Items are field names; a group id stands for all of its fields.
  */
 export async function setGa4Groups(
@@ -219,32 +221,37 @@ export async function setGa4Groups(
   items: string[],
 ): Promise<{ changed: boolean; added: string[]; removed: string[] }> {
   const c = await requireManage(db, userId, connectionId);
-  if (c.provider_id !== "ga4" || c.mode !== "live") throw new Error("data groups can be chosen only for live GA4 connectors");
-  if (items.some((g) => !isGa4SelectionItem(g))) throw new Error("unknown report");
-  const current = sanitizeGa4Selection(c.settings?.ga4_reports);
-  const next = sanitizeGa4Selection(items);
-  const problem = exportLiftsLimits(c) ? null : ga4SelectionProblem(next);
+  const cat = columnCatalog(c.provider_id);
+  if (!cat || c.mode !== "live") throw new Error("columns can be chosen only for live connectors with a column list");
+  if (items.some((g) => !isCatalogItem(cat, g))) throw new Error("unknown report");
+  const key = cat.settingsKey;
+  const saved = (c.settings as Record<string, unknown> | null)?.[key];
+  const current = cat.sanitize(saved);
+  const next = cat.sanitize(items);
+  const problem = exportLiftsLimits(c) ? null : cat.problem(next);
   if (problem) throw new Error(problem);
   const added = next.filter((g) => !current.includes(g));
   const removed = current.filter((g) => !next.includes(g));
   // Older settings stored group ids: rewrite them as field names even when the fields are the same.
-  const stored = Array.isArray(c.settings?.ga4_reports) ? c.settings!.ga4_reports!.map(String) : [];
+  const stored = Array.isArray(saved) ? saved.map(String) : [];
+  const write = `update public.company_connections set settings = jsonb_set(coalesce(settings, '{}'::jsonb), array[$3::text], $2::jsonb)`;
   if (added.length === 0 && removed.length === 0) {
-    if (JSON.stringify(stored) !== JSON.stringify(next)) {
-      await db.query(`update public.company_connections set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{ga4_reports}', $2::jsonb) where id = $1`, [c.id, JSON.stringify(next)]);
-    }
+    if (JSON.stringify(stored) !== JSON.stringify(next)) await db.query(`${write} where id = $1`, [c.id, JSON.stringify(next), key]);
     return { changed: false, added, removed };
   }
-  await db.query(
-    `update public.company_connections set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{ga4_reports}', $2::jsonb), updated_at = now() where id = $1`,
-    [c.id, JSON.stringify(next)],
-  );
+  await db.query(`${write}, updated_at = now() where id = $1`, [c.id, JSON.stringify(next), key]);
   await db.query(
     `insert into public.audit_logs (workspace_id, company_id, actor_user_id, action, target_type, target_id, metadata)
      values ($1, $2, $3, 'connection.report_toggled', 'connection', $4, $5)`,
     [c.workspace_id, c.company_id, userId, c.id, JSON.stringify({ fields: next, added, removed })],
   );
   return { changed: true, added, removed };
+}
+
+/** Chosen columns of a connection (field names), for connectors with a column catalog. */
+export function selectedColumns(c: { provider_id: string; settings: unknown }): string[] {
+  const cat = columnCatalog(c.provider_id);
+  return cat ? cat.sanitize((c.settings as Record<string, unknown> | null)?.[cat.settingsKey]) : [];
 }
 
 /** One page (or an export) of a connector's raw rows with period, filters and sorting. */
@@ -264,7 +271,7 @@ export async function loadRawPage(
   const wh = await getWarehouse(resource.provider);
   const ref = toDatasetRef(resource);
   const sample = await wh.queryRawPage(ref, { syncRunIds: ids, source: opts.source, limit: 20, offset: 0 });
-  const columns = rawColumnsFor(c.provider_id, sample.rows.map((r) => r.payload_json), c.settings?.ga4_reports);
+  const columns = rawColumnsFor(c.provider_id, sample.rows.map((r) => r.payload_json), selectedColumns(c));
   const byLabel = new Map(columns.map((col) => [col.label, col.path]));
   const filters = opts.ignoreFilters
     ? []

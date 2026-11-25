@@ -2,6 +2,7 @@
 // payload), and the URL parameters for period, filters, sorting and paging.
 
 import { ga4Fields } from "./ga4Catalog";
+import { columnCatalog } from "./columnCatalog";
 import { GA4_DIMENSIONS as LEGACY_DIMENSIONS, GA4_METRICS as LEGACY_METRICS } from "./rawView";
 import { addDays } from "./dates";
 import { flattenRawPayload } from "./rawView";
@@ -34,6 +35,11 @@ export function rawColumnsFor(origin: string, samplePayloads: string[], ga4Group
       ].filter((c) => c.label !== "date");
     }
     const f = ga4Fields(ga4Groups);
+    return [...f.dimensions, ...f.metrics].filter((n) => n !== "date").map((n) => ({ label: n, path: [n] }));
+  }
+  const cat = columnCatalog(origin);
+  if (cat) {
+    const f = cat.fields(ga4Groups);
     return [...f.dimensions, ...f.metrics].filter((n) => n !== "date").map((n) => ({ label: n, path: [n] }));
   }
   const labels: string[] = [];

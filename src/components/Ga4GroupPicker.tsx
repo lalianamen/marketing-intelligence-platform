@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { GA4_MAX_DIMENSIONS, GA4_MAX_METRICS, type Ga4Group, ga4Fields, ga4SelectionProblem, sanitizeGa4Selection } from "@/lib/ga4Catalog";
+import type { Ga4Group } from "@/lib/ga4Catalog";
+import { columnCatalog } from "@/lib/columnCatalog";
 import { SubmitButton } from "./SubmitButton";
 
 /**
- * Choose GA4 columns as a draft — a whole group with its switch or single fields
+ * Choose a connector's columns (GA4, Search Console…) as a draft — a whole group with its switch or single fields
  * with their boxes; nothing changes until Save.
  * After the first load, Save asks for confirmation, because a real change
  * deletes the connector's data and loads the last 30 days again.
@@ -18,6 +19,7 @@ export function Ga4GroupPicker({
   canManage,
   reloadOnSave,
   unlimited = false,
+  provider = "ga4",
 }: {
   action: (form: FormData) => Promise<void>;
   connectionId: string;
@@ -27,18 +29,22 @@ export function Ga4GroupPicker({
   reloadOnSave: boolean;
   /** Full data (GA4 BigQuery export) is on: no GA4 Data API limit on columns. */
   unlimited?: boolean;
+  /** Which column catalog (see lib/columnCatalog). */
+  provider?: string;
 }) {
-  const problemOf = (sel: string[]) => (unlimited ? null : ga4SelectionProblem(sel));
+  const cat = columnCatalog(provider)!;
+  const sanitize = cat.sanitize;
+  const problemOf = (sel: string[]) => (unlimited ? null : cat.problem(sel));
   const [draft, setDraft] = useState<string[]>(saved);
   const dialog = useRef<HTMLDialogElement>(null);
   const added = draft.filter((g) => !saved.includes(g));
   const removed = saved.filter((g) => !draft.includes(g));
   const dirty = added.length + removed.length > 0;
-  const fields = ga4Fields(draft);
-  const toggleField = (name: string) => setDraft((d) => sanitizeGa4Selection(d.includes(name) ? d.filter((x) => x !== name) : [...d, name]));
+  const fields = cat.fields(draft);
+  const toggleField = (name: string) => setDraft((d) => sanitize(d.includes(name) ? d.filter((x) => x !== name) : [...d, name]));
   const groupNames = (g: Ga4Group) => [...g.dimensions, ...g.metrics].map((f) => f.name);
   const toggleGroup = (g: Ga4Group, allOn: boolean) =>
-    setDraft((d) => sanitizeGa4Selection(allOn ? d.filter((x) => !groupNames(g).includes(x)) : [...d, ...groupNames(g)]));
+    setDraft((d) => sanitize(allOn ? d.filter((x) => !groupNames(g).includes(x)) : [...d, ...groupNames(g)]));
 
   return (
     <form action={action} data-testid="ga4-picker">
@@ -118,9 +124,9 @@ export function Ga4GroupPicker({
       {canManage && (
         <div className="sticky bottom-0 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white/95 p-3 text-sm shadow-sm" data-testid="ga4-picker-bar">
           <p className="text-gray-700">
-            {unlimited
-              ? `${fields.dimensions.length} breakdowns · ${fields.metrics.length} numbers (no limit with full data)`
-              : `${fields.dimensions.length} of ${GA4_MAX_DIMENSIONS} breakdowns · ${fields.metrics.length} of ${GA4_MAX_METRICS} numbers`}
+            {unlimited || cat.maxDimensions === null
+              ? `${fields.dimensions.length} breakdowns · ${fields.metrics.length} numbers${unlimited ? " (no limit with full data)" : ""}`
+              : `${fields.dimensions.length} of ${cat.maxDimensions} breakdowns · ${fields.metrics.length} of ${cat.maxMetrics} numbers`}
             {dirty ? (
               <span className="ml-2 font-medium text-amber-800">
                 Unsaved changes{added.length ? ` · add: ${added.join(", ")}` : ""}{removed.length ? ` · remove: ${removed.join(", ")}` : ""}

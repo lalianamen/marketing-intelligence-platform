@@ -3,7 +3,7 @@ import { getCompanyContext } from "@/server/appContext";
 import { getPool } from "@/server/db";
 import { loadConfig } from "@/server/config";
 import { getWarehouse } from "@/server/warehouse";
-import { exportLiftsLimits, loadConnection, loadRawPage, loadRuns } from "@/server/connections/manage";
+import { exportLiftsLimits, loadConnection, loadRawPage, loadRuns, selectedColumns } from "@/server/connections/manage";
 import { modeBadge, PROVIDER_LABEL } from "@/server/companyStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { LoadStatus } from "@/components/LoadStatus";
@@ -17,7 +17,7 @@ import { displayValue, parseRawTableParams, rawTableQuery, valueAt } from "@/lib
 import { RawFilterRow } from "@/components/RawFilterRow";
 import { ScrollX } from "@/components/ScrollX";
 import { Expandable } from "@/components/Expandable";
-import { GA4_GROUPS, GA4_MAX_DIMENSIONS, GA4_MAX_METRICS, ga4Fields, sanitizeGa4Selection } from "@/lib/ga4Catalog";
+import { columnCatalog } from "@/lib/columnCatalog";
 import { Ga4GroupPicker } from "@/components/Ga4GroupPicker";
 import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, startLoadingAction, syncNowAction, saveGa4GroupsAction, turnOffGa4ExportAction, updateScheduleAction } from "../../actions";
 import { addDays, localDate } from "@/lib/dates";
@@ -36,8 +36,10 @@ export default async function ConnectionPage({ params, searchParams }: { params:
   const cfg = loadConfig();
   const isGa4Live = c.provider_id === "ga4" && c.mode === "live";
   const inSetup = c.mode !== "manual" && !c.activated_at;
-  const enabledReports = isGa4Live ? sanitizeGa4Selection(c.settings?.ga4_reports) : [];
-  const fieldsNow = ga4Fields(enabledReports);
+  // Connectors with a choice of columns (GA4, Search Console): one table, chosen columns.
+  const catalog = c.mode === "live" ? columnCatalog(c.provider_id) : null;
+  const enabledReports = catalog ? selectedColumns(c) : [];
+  const fieldsNow = catalog ? catalog.fields(enabledReports) : { dimensions: [], metrics: [] };
   // GA4 rows of the one table have source "ga4" (rows of the former separate reports are not shown).
   const rawSource = c.provider_id === "ga4" ? "ga4" : undefined;
   const tableYesterday = addDays(localDate(new Date(), tz), -1);
@@ -135,23 +137,23 @@ export default async function ConnectionPage({ params, searchParams }: { params:
             this connector is deleted and only the last 30 days are loaded again — and a new load takes time.
           </Notice>
           <ol className="space-y-1 text-sm text-gray-700">
-            <li><strong>1. What to collect</strong> — {isGa4Live ? "switch groups on in the list below; their columns are added to the one table (the dashboard columns are always included)." : "this source has one standard table."}</li>
+            <li><strong>1. What to collect</strong> — {catalog ? "switch groups on in the list below; their columns are added to the one table (the dashboard columns are always included)." : "this source has one standard table."}</li>
             <li><strong>2. Period</strong> and <strong>3. Schedule</strong> — in the form below.</li>
           </ol>
         </section>
       )}
 
-      {isGa4Live && (
+      {catalog && (
         <details id="ga4-reports" className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog" open={inSetup || Boolean(sp.groups_saved || sp.groups_unchanged || sp.error || sp.export || sp.export_error || sp.export_off)}>
-          <summary className="cursor-pointer text-base font-semibold">Data in the table <span className="ml-2 text-sm font-normal text-gray-500">{exportLiftsLimits(c) ? `${fieldsNow.dimensions.length} breakdowns · ${fieldsNow.metrics.length} numbers` : `${fieldsNow.dimensions.length} of ${GA4_MAX_DIMENSIONS} breakdowns · ${fieldsNow.metrics.length} of ${GA4_MAX_METRICS} numbers`}</span></summary>
+          <summary className="cursor-pointer text-base font-semibold">Data in the table <span className="ml-2 text-sm font-normal text-gray-500">{exportLiftsLimits(c) || catalog.maxDimensions === null ? `${fieldsNow.dimensions.length} breakdowns · ${fieldsNow.metrics.length} numbers` : `${fieldsNow.dimensions.length} of ${catalog.maxDimensions} breakdowns · ${fieldsNow.metrics.length} of ${catalog.maxMetrics} numbers`}</span></summary>
           <p className="mt-2 text-xs text-gray-500">
             {inSetup
               ? "Tick every column you want in the table before the first load — a whole group with its switch, or single fields."
               : "Tick the columns you want — a whole group with its switch, or single fields. Choose everything first, then press Save: only then all data of this connector is deleted and the last 30 days are loaded again."}
             {" "}Fewer breakdowns give fewer, larger rows: a removed breakdown is added up into the remaining ones.
-            {" "}GA4 allows at most {GA4_MAX_DIMENSIONS} breakdowns and {GA4_MAX_METRICS} numbers in one table.
+            {catalog.maxDimensions !== null && !exportLiftsLimits(c) && <>{" "}GA4 allows at most {catalog.maxDimensions} breakdowns and {catalog.maxMetrics} numbers in one table.</>}
           </p>
-          {!inSetup && (
+          {isGa4Live && !inSetup && (
             <section id="full-data" className="mt-4 rounded-lg border border-blue-100 bg-blue-50/40 p-4" data-testid="full-data">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -161,7 +163,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
                   </h3>
                   <p className="mt-1 max-w-3xl text-sm text-gray-600">
                     Google copies every event of your site into the platform&apos;s BigQuery once a day. The table is then built from those events:
-                    any columns together, no limit of {GA4_MAX_DIMENSIONS} breakdowns.
+                    any columns together, no limit of 9 breakdowns.
                   </p>
                 </div>
                 {canManage && (!c.export || c.export.status === "failed") && (
@@ -215,7 +217,8 @@ export default async function ConnectionPage({ params, searchParams }: { params:
             key={enabledReports.join(",")}
             action={saveGa4GroupsAction}
             connectionId={c.id}
-            groups={GA4_GROUPS}
+            groups={catalog.groups}
+            provider={c.provider_id}
             saved={enabledReports}
             canManage={canManage}
             reloadOnSave={!inSetup}
