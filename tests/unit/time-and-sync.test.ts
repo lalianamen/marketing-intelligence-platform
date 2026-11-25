@@ -73,6 +73,13 @@ describe("sync window and cursor progression", () => {
       to: "2026-11-22",
     });
   });
+  it("never fetches more than one month per run: a long gap is caught up in parts", () => {
+    const now = new Date("2026-11-23T12:00:00Z");
+    expect(computeSyncWindow({ now, timezone: "UTC", cursorDate: "2026-08-31", lookbackDays: 3, initialBackfillDays: 30 })).toEqual({
+      from: "2026-09-01",
+      to: "2026-10-01",
+    });
+  });
   it("uses the company timezone for 'yesterday'", () => {
     const lateEvening = new Date("2026-11-23T06:00:00Z"); // 22:00 on the 22nd in LA
     expect(computeSyncWindow({ now: lateEvening, timezone: "America/Los_Angeles", cursorDate: "2026-11-21", lookbackDays: 1, initialBackfillDays: 30 })).toEqual({

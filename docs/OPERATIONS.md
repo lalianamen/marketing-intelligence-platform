@@ -108,5 +108,9 @@ buffer (GA4 60 min, Ads 30 min) + 0–15 min deterministic jitter. At most 4 con
   by comparing its SHA-256 with `private.scheduler_tokens`. Set up once per environment with
   `select private.configure_scheduler('https://<app host>');` (idempotent).
 - Vercel Cron (`vercel.json`, daily 16:00 UTC, Bearer `CRON_SECRET`) stays as a fallback.
+- One sync run fetches at most 31 days. The first connection loads the last 30 days. A long gap in automatic updates
+  is caught up month by month (the next part is queued right after each one). Older history is requested on the
+  connector page ("Load history", up to 400 days back) and split by `request_history` into parts of up to 31 days,
+  newest first; each part is saved on its own, so a failure retries only that part.
 - An API sync replaces its window: the connector's normalized rows for those days are deleted and rewritten, so
   campaigns the provider no longer returns do not remain and double count.

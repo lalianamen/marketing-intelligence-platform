@@ -13,6 +13,7 @@ import { getResourceForCompany, toDatasetRef } from "../registry/registry";
 import { recordUsage } from "../usage/usage";
 import { type Warehouse, WarehouseError, type WarehouseProvider } from "../warehouse/types";
 import { computeSyncWindow } from "./window";
+import { addDays } from "../../lib/dates";
 
 // Shared sync engine for every source:
 // fetch → RAW → NORMALIZED (upsert by grain) → MART rebuild for touched dates →
@@ -254,6 +255,19 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
            last_sync_run_id = excluded.last_sync_run_id, updated_at = now()`,
         [conn.id, run.workspace_id, run.company_id, window.to, run.id],
       );
+
+      // Caught up only part of a long gap (one month per run): queue the next part right away.
+      if (connector && window && !run.window_start) {
+        const yesterday = addDays(localDate(now, company.timezone), -1);
+        if (window.to < yesterday) {
+          await db.query(
+            `insert into public.sync_runs (workspace_id, company_id, connection_id, provider_id, trigger, idempotency_key, is_simulated)
+             values ($1, $2, $3, $4, 'scheduled', $5, $6)
+             on conflict (idempotency_key) do nothing`,
+            [run.workspace_id, run.company_id, conn.id, conn.provider_id, `catchup:${conn.id}:${window.to}`, conn.mode === "simulated"],
+          );
+        }
+      }
     }
     await db.query(
       `update public.company_connections

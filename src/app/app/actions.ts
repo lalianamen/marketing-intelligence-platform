@@ -41,6 +41,7 @@ function friendly(message: string | undefined): string {
   if (/already provisioned/i.test(message)) return "This company's data space is already ready.";
   if (/disconnected/i.test(message)) return "This connection is disconnected.";
   if (/confirmation name/i.test(message)) return "The name you typed does not match the company name. Nothing was deleted.";
+  if (/history can be loaded only/i.test(message)) return "History can be loaded only for connected sources.";
   if (/company busy/i.test(message)) return "The company is busy (its data space is being prepared or an import is running). Try again in a minute.";
   return "Something went wrong. Please try again.";
 }
@@ -312,4 +313,23 @@ export async function toggleGa4ReportAction(form: FormData): Promise<void> {
     kickJobs();
   }
   redirect(`/app/connections/${id}?report=${on ? report : "core"}` + (on ? "&enabled=1" : "&disabled=1") + "#ga4-reports");
+}
+
+export async function requestHistoryAction(form: FormData): Promise<void> {
+  const { supabase } = await requireUser();
+  const id = String(form.get("connection_id") ?? "");
+  const from = String(form.get("from") ?? "");
+  const to = String(form.get("to") ?? "");
+  const r = await supabase.rpc("request_history", { p_connection_id: id, p_from: from, p_to: to });
+  if (r.error) {
+    const m = r.error.message;
+    const msg = /invalid window/.test(m)
+      ? "Choose complete past days (up to yesterday), at most 400 days back."
+      : /already in progress/.test(m)
+        ? "A history load is already running for this connector."
+        : friendly(m);
+    redirect(`/app/connections/${id}?error=` + encodeURIComponent(msg) + "#history");
+  }
+  kickJobs();
+  redirect(`/app/connections/${id}?history=${r.data}#history`);
 }

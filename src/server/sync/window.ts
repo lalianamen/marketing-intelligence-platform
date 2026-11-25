@@ -22,5 +22,10 @@ export function computeSyncWindow(opts: {
   const lookbackStart = addDays(to, -(Math.max(1, opts.lookbackDays) - 1));
   const from = afterCursor < lookbackStart ? afterCursor : lookbackStart;
   if (from > to) return null;
-  return { from, to };
+  // At most one month per run: a long gap is caught up month by month (the caller queues the next part).
+  const maxTo = addDays(from, MAX_WINDOW_DAYS - 1);
+  return maxTo < to ? { from, to: maxTo } : { from, to };
 }
+
+/** Largest window a single sync run fetches. */
+export const MAX_WINDOW_DAYS = 31;

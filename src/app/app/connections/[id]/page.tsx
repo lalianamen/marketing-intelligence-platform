@@ -12,12 +12,13 @@ import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
 import { fmtDateTime, fmtInt } from "@/lib/format";
 import { flattenRawPayload, rawColumns } from "@/lib/rawView";
 import { GA4_REPORTS, ga4ReportById, sanitizeGa4Reports } from "@/lib/ga4Catalog";
-import { deleteConnectionAction, disconnectConnectionAction, syncNowAction, toggleGa4ReportAction, updateScheduleAction } from "../../actions";
+import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, syncNowAction, toggleGa4ReportAction, updateScheduleAction } from "../../actions";
+import { addDays, localDate } from "@/lib/dates";
 
 const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
 const RAW_LIMIT = 500;
 
-export default async function ConnectionPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string; error?: string; queued?: string; report?: string; enabled?: string; disabled?: string }> }) {
+export default async function ConnectionPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string; error?: string; queued?: string; report?: string; enabled?: string; disabled?: string; history?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
   const ctx = await getCompanyContext();
@@ -37,6 +38,8 @@ export default async function ConnectionPage({ params, searchParams }: { params:
   const name = PROVIDER_LABEL[c.provider_id] ?? c.provider_id;
   const canManage = c.access === "manage";
   const busy = runs.some((r) => r.status === "queued" || r.status === "running");
+  const yesterday = addDays(localDate(new Date(), tz), -1);
+  const historyRunning = runs.some((r) => r.trigger === "backfill" && (r.status === "queued" || r.status === "running"));
 
   return (
     <div className="space-y-6">
@@ -131,6 +134,29 @@ export default async function ConnectionPage({ params, searchParams }: { params:
         </Card>
       </div>
 
+      {canManage && c.mode !== "manual" && (
+        <Card title="Load history">
+          <div id="history" />
+          {sp.history && <div className="mb-3"><Notice tone="green">History load queued in {sp.history} part{sp.history === "1" ? "" : "s"} of up to one month. Parts load one after another; progress shows in Update history.</Notice></div>}
+          <p className="text-sm text-gray-600">
+            Load past days, for example before the connector was added. To stay reliable, a period is loaded in parts of up to one month each; if one part fails, only that part is retried. The first connection always loads the last 30 days.
+          </p>
+          <form action={requestHistoryAction} className="mt-3 flex flex-wrap items-end gap-3 text-sm" data-testid="history-form">
+            <input type="hidden" name="connection_id" value={c.id} />
+            <label className="block">
+              <span className="text-gray-700">From</span>
+              <input type="date" name="from" required min={addDays(yesterday, -399)} max={yesterday} defaultValue={addDays(yesterday, -89)} className="mt-1 block rounded-lg border border-gray-300 px-2 py-1" />
+            </label>
+            <label className="block">
+              <span className="text-gray-700">To</span>
+              <input type="date" name="to" required min={addDays(yesterday, -399)} max={yesterday} defaultValue={yesterday} className="mt-1 block rounded-lg border border-gray-300 px-2 py-1" />
+            </label>
+            <SubmitButton pendingText="Queuing…">{historyRunning ? "Loading…" : "Load history"}</SubmitButton>
+            <span className="text-xs text-gray-500">Up to 400 days back. Days already loaded are replaced, never duplicated.</span>
+          </form>
+        </Card>
+      )}
+
       <Card title="Update history">
         {runs.length === 0 ? <p className="text-sm text-gray-600">No updates yet.</p> : (
           <div className="overflow-x-auto">
@@ -140,7 +166,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
                 {runs.map((r) => (
                   <tr key={r.id} data-testid="sync-run">
                     <td className="py-2">{fmtDateTime(r.created_at.toISOString(), tz)}</td>
-                    <td>{r.trigger.replace("_", " ")}</td>
+                    <td>{r.trigger === "backfill" ? "history" : r.trigger.replace("_", " ")}</td>
                     <td>{r.window_start ? `${r.window_start} → ${r.window_end}` : "—"}</td>
                     <td>{fmtInt(r.rows_written)}</td>
                     <td><Badge tone={RUN_TONE[r.status] ?? "gray"}>{r.status}</Badge>{r.error_code && r.status !== "succeeded" && <span className="ml-1 text-xs text-red-700">{r.error_code}</span>}</td>

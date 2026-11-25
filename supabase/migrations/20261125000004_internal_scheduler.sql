@@ -32,8 +32,8 @@ begin
   if v_url !~ '^https://[a-z0-9.-]+$' then
     raise exception 'app url must be https://host' using errcode = '22023';
   end if;
-  create extension if not exists pg_cron;
-  create extension if not exists pg_net;
+  create extension if not exists pg_cron with schema pg_catalog;
+  create extension if not exists pg_net with schema extensions;
 
   select decrypted_secret into v_token from vault.decrypted_secrets where name = 'mip_scheduler_token';
   if v_token is null then
