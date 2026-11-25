@@ -25,11 +25,11 @@ describe("GA4 connector (mocked HTTP)", () => {
       json(200, {
         rowCount: 1,
         metadata: { currencyCode: "EUR", timeZone: "Europe/Berlin" },
-        rows: [{ dimensionValues: [{ value: "20261101" }, { value: "42" }, { value: "Spring" }], metricValues: [{ value: "120" }, { value: "7" }, { value: "350.5" }] }],
+        rows: [{ dimensionValues: [{ value: "20261101" }, { value: "Spring" }, { value: "42" }], metricValues: [{ value: "120" }, { value: "7" }, { value: "350.5" }] }],
       }),
     );
     const c = new Ga4Connector({ clientId: "id", clientSecret: "s", fetch: f });
-    const out = await c.fetchDaily({ ...ctx, externalAccountId: "123456" });
+    const out = await c.fetchDaily({ ...ctx, externalAccountId: "123456", options: { ga4Reports: ["sessionCampaignId"] } });
     expect(out.complete).toBe(true);
     expect(out.records[0]).toMatchObject({
       date: "2026-11-01",
@@ -44,10 +44,10 @@ describe("GA4 connector (mocked HTTP)", () => {
   });
 
   it("traffic without a campaign keeps one row per channel instead of merging under \"(not set)\"", async () => {
-    const row = (name: string, sessions: string) => ({ dimensionValues: [{ value: "20261101" }, { value: "(not set)" }, { value: name }], metricValues: [{ value: sessions }, { value: "0" }, { value: "0" }] });
+    const row = (name: string, sessions: string) => ({ dimensionValues: [{ value: "20261101" }, { value: name }, { value: "(not set)" }], metricValues: [{ value: sessions }, { value: "0" }, { value: "0" }] });
     const f = vi.fn().mockResolvedValueOnce(tokenOk.clone()).mockResolvedValueOnce(json(200, { rowCount: 2, metadata: {}, rows: [row("(organic)", "18"), row("(direct)", "20")] }));
     const c = new Ga4Connector({ clientId: "id", clientSecret: "s", fetch: f });
-    const out = await c.fetchDaily({ ...ctx, externalAccountId: "123456" });
+    const out = await c.fetchDaily({ ...ctx, externalAccountId: "123456", options: { ga4Reports: ["sessionCampaignId"] } });
     expect(out.records.map((r) => [r.campaign_id, r.campaign_name, r.metrics.sessions])).toEqual([
       ["(not set) (organic)", "(organic)", 18],
       ["(not set) (direct)", "(direct)", 20],
@@ -56,21 +56,21 @@ describe("GA4 connector (mocked HTTP)", () => {
 
   it("one request with the base fields plus every chosen group; rows of a campaign stay apart in raw, sum for the dashboard", async () => {
     const row = (campaign: string, source: string, sessions: string) => ({
-      dimensionValues: ["20261101", "(not set)", campaign, source, "organic", "Organic Search"].map((value) => ({ value })),
+      dimensionValues: ["20261101", campaign, source, "organic", "Organic Search"].map((value) => ({ value })),
       metricValues: [sessions, "1", "0"].map((value) => ({ value })),
     });
     const f = vi.fn().mockResolvedValueOnce(tokenOk.clone()).mockResolvedValueOnce(json(200, { rowCount: 2, metadata: {}, rows: [row("(organic)", "google", "17"), row("(organic)", "bing", "1")] }));
     const c = new Ga4Connector({ clientId: "id", clientSecret: "s", fetch: f });
     const out = await c.fetchDaily({ ...ctx, externalAccountId: "123456", options: { ga4Reports: ["traffic_sources", "bogus"] } });
     const body = JSON.parse((f.mock.calls[1]![1] as RequestInit).body as string);
-    expect(body.dimensions.map((d: { name: string }) => d.name)).toEqual(["date", "sessionCampaignId", "sessionCampaignName", "sessionSource", "sessionMedium", "sessionDefaultChannelGroup"]);
+    expect(body.dimensions.map((d: { name: string }) => d.name)).toEqual(["date", "sessionCampaignName", "sessionSource", "sessionMedium", "sessionDefaultChannelGroup"]);
     expect(body.metrics.map((m: { name: string }) => m.name)).toEqual(["sessions", "keyEvents", "totalRevenue"]);
     expect(out.records.map((r) => r.raw)).toEqual([
       expect.objectContaining({ sessionCampaignName: "(organic)", sessionSource: "google", sessions: "17" }),
       expect.objectContaining({ sessionCampaignName: "(organic)", sessionSource: "bing", sessions: "1" }),
     ]);
     expect(new Set(out.records.map((r) => r.rawKey)).size).toBe(2);
-    expect(new Set(out.records.map((r) => r.campaign_id))).toEqual(new Set(["(not set) (organic)"]));
+    expect(new Set(out.records.map((r) => r.campaign_id))).toEqual(new Set(["name:(organic)"])); // without the Campaign ID column, campaigns are told apart by name
   });
 
   it("expired refresh token → auth_expired (not retryable)", async () => {

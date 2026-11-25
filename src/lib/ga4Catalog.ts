@@ -36,7 +36,6 @@ export const GA4_GROUPS: Ga4Group[] = [
     summary: "Visits, key events and revenue per day and campaign or channel. Feeds the dashboard; always on.",
     dimensions: [
       { name: "date", description: "Calendar day in the property's time zone (shown in the Day column)." },
-      { name: "sessionCampaignId", description: "ID of the campaign that started the visit; \"(not set)\" when there was none." },
       { name: "sessionCampaignName", description: "Campaign name; for visits without a campaign GA4 puts the channel here, e.g. (organic), (direct)." },
     ],
     metrics: [
@@ -44,6 +43,16 @@ export const GA4_GROUPS: Ga4Group[] = [
       { name: "keyEvents", description: "Actions marked as key events in GA4 (sign-up, purchase, form…)." },
       { name: "totalRevenue", description: "All revenue GA4 recorded: purchases, subscriptions, ads." },
     ],
+  },
+  {
+    id: "campaign_ids",
+    title: "Campaign ID",
+    summary: "The ad platform's campaign number, next to the campaign name.",
+    note: "Only useful with tagged ad campaigns; without them it is always \"(not set)\".",
+    dimensions: [
+      { name: "sessionCampaignId", description: "ID of the campaign that started the visit; \"(not set)\" when there was none." },
+    ],
+    metrics: [],
   },
   {
     id: "traffic_sources",

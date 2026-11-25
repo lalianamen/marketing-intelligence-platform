@@ -1,7 +1,8 @@
 // Raw data table on the connector page: columns (label → JSON path in the stored
 // payload), and the URL parameters for period, filters, sorting and paging.
 
-import { GA4_CORE, ga4Fields } from "./ga4Catalog";
+import { ga4Fields } from "./ga4Catalog";
+import { GA4_DIMENSIONS as LEGACY_DIMENSIONS, GA4_METRICS as LEGACY_METRICS } from "./rawView";
 import { addDays } from "./dates";
 import { flattenRawPayload } from "./rawView";
 
@@ -28,8 +29,8 @@ export function rawColumnsFor(origin: string, samplePayloads: string[], ga4Group
     const legacy = samplePayloads.some((p) => /^\s*\{\s*"dimensions"\s*:\s*\[/.test(p));
     if (legacy) {
       return [
-        ...GA4_CORE.dimensions.map((d, i) => ({ label: d.name, path: ["dimensions", String(i), "value"] })),
-        ...GA4_CORE.metrics.map((m, i) => ({ label: m.name, path: ["metrics", String(i), "value"] })),
+        ...LEGACY_DIMENSIONS.map((name, i) => ({ label: name, path: ["dimensions", String(i), "value"] })),
+        ...LEGACY_METRICS.map((name, i) => ({ label: name, path: ["metrics", String(i), "value"] })),
       ].filter((c) => c.label !== "date");
     }
     const f = ga4Fields(ga4Groups);

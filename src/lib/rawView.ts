@@ -1,11 +1,11 @@
 // Turns stored raw provider payloads into flat, labelled table rows for display.
 
-import { GA4_CORE } from "./ga4Catalog";
-
-const CORE = GA4_CORE;
-/** GA4 core report columns the connector requests, in order; raw records keep values in this order. */
-export const GA4_DIMENSIONS = CORE.dimensions.map((d: { name: string }) => d.name);
-export const GA4_METRICS = CORE.metrics.map((m: { name: string }) => m.name);
+/**
+ * Field order of GA4 rows stored before the one-table change (values kept by position).
+ * Fixed on purpose: those stored rows do not change when the catalog does.
+ */
+export const GA4_DIMENSIONS = ["date", "sessionCampaignId", "sessionCampaignName"];
+export const GA4_METRICS = ["sessions", "keyEvents", "totalRevenue"];
 
 function flatten(value: unknown, prefix: string, out: Record<string, string>): void {
   if (value === null || value === undefined) {

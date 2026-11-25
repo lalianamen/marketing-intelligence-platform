@@ -4,7 +4,7 @@ import { type Connector, ConnectorError, type FetchContext, type FetchResult, ty
 
 // GA4 LIVE connector — Google Analytics Data API v1beta `runReport`.
 // MVP pathway: daily REPORT metrics per session campaign (not raw events).
-//   dimensions: date, sessionCampaignId, sessionCampaignName
+//   dimensions: date, sessionCampaignName (+ sessionCampaignId when chosen)
 //   metrics:    sessions, keyEvents, totalRevenue
 // "keyEvents" are GA4 key events — reported as conversion_type 'ga4_key_event'
 // and never summed with ad-platform conversions. totalRevenue is GA4-reported
@@ -88,7 +88,10 @@ export class Ga4Connector implements Connector {
           account_name: null,
           // Traffic without a campaign comes back as "(not set)" with the channel as the name
           // ("(organic)", "(direct)"…): keep those apart instead of merging them under one id.
-          campaign_id: campaignId && campaignId !== "(not set)" ? campaignId : `(not set) ${campaignName}`.trim(),
+          // Without the Campaign ID column, campaigns are told apart by name.
+          campaign_id: !fields.dimensions.includes("sessionCampaignId")
+            ? `name:${campaignName || "(not set)"}`
+            : campaignId && campaignId !== "(not set)" ? campaignId : `(not set) ${campaignName}`.trim(),
           campaign_name: campaignName || null,
           currency: body.metadata?.currencyCode ?? null,
           timezone: tz,

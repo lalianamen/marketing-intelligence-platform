@@ -82,8 +82,8 @@ describe("GA4 one table", () => {
 
   it("the GA4 limit of 9 breakdowns is enforced before anything changes", async () => {
     const deps = await workerDeps();
-    await setGa4Report(pool, deps.getWarehouse, U.id, conn, "devices", true); // 3 + 3 + 3 = 9
-    await expect(setGa4Report(pool, deps.getWarehouse, U.id, conn, "landing_pages", true)).rejects.toThrow(/at most 9 breakdowns/);
+    await setGa4Report(pool, deps.getWarehouse, U.id, conn, "devices", true); // 2 + 3 + 3 = 8
+    await expect(setGa4Report(pool, deps.getWarehouse, U.id, conn, "geo", true)).rejects.toThrow(/at most 9 breakdowns/);
     expect((await loadConnection(pool, U.id, conn))!.settings.ga4_reports).toEqual([...["sessionSource", "sessionMedium", "sessionDefaultChannelGroup"], "deviceCategory", "operatingSystem", "browser"]);
     await setGa4Report(pool, deps.getWarehouse, U.id, conn, "devices", false);
   });
@@ -94,7 +94,7 @@ describe("GA4 one table", () => {
     expect(await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources", "users"])).toEqual({ changed: true, added: ["totalUsers", "newUsers"], removed: [] });
     // single fields: drop one breakdown, keep one number of a group
     expect(await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["sessionSource", "sessionMedium", "newUsers"])).toEqual({ changed: true, added: [], removed: ["sessionDefaultChannelGroup", "totalUsers"] });
-    await expect(setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources", "devices", "landingPage"])).rejects.toThrow(/at most 9 breakdowns/);
+    await expect(setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources", "devices", "city", "landingPage"])).rejects.toThrow(/at most 9 breakdowns/);
     expect((await loadConnection(pool, U.id, conn))!.settings.ga4_reports).toEqual(["sessionSource", "sessionMedium", "newUsers"]);
     await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources"]);
   });

@@ -258,7 +258,7 @@ try {
     await page.click('button[role="switch"][aria-label="Traffic sources"]');
     await page.click('button[role="switch"][aria-label="Devices and technology"]');
     await bar.getByText("Unsaved changes").waitFor();
-    assert.ok(await bar.getByText("9 of 9 breakdowns").isVisible(), "draft counts update live");
+    assert.ok(await bar.getByText("8 of 9 breakdowns").isVisible(), "draft counts update live");
     await page.click('button:has-text("Undo changes")');
     await bar.getByText("No changes").waitFor();
     await page.click('button[role="switch"][aria-label="Traffic sources"]');

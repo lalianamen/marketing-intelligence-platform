@@ -26,7 +26,7 @@ describe("raw table parameters", () => {
   it("GA4 table columns follow the chosen groups; older rows stored by position still show", () => {
     const named = JSON.stringify({ date: "20261101", sessionCampaignName: "(organic)", sessionSource: "google", sessions: "3" });
     const cols = rawColumnsFor("ga4", [named], ["traffic_sources"]);
-    expect(cols.map((c) => c.label)).toEqual(["sessionCampaignId", "sessionCampaignName", "sessionSource", "sessionMedium", "sessionDefaultChannelGroup", "sessions", "keyEvents", "totalRevenue"]);
+    expect(cols.map((c) => c.label)).toEqual(["sessionCampaignName", "sessionSource", "sessionMedium", "sessionDefaultChannelGroup", "sessions", "keyEvents", "totalRevenue"]);
     expect(cols.find((c) => c.label === "sessions")!.path).toEqual(["sessions"]);
     const legacy = JSON.stringify({ dimensions: [{ value: "20261101" }], metrics: [{ value: "3" }] });
     expect(rawColumnsFor("ga4", [legacy], ["traffic_sources"]).find((c) => c.label === "sessions")!.path).toEqual(["metrics", "0", "value"]);
