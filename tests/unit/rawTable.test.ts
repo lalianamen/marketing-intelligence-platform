@@ -26,6 +26,9 @@ describe("raw table parameters", () => {
   it("GA4 core columns point at stored positions; extra reports at named fields", () => {
     expect(rawColumnsFor("ga4", "ga4", []).find((c) => c.label === "sessions")!.path).toEqual(["metrics", "0", "value"]);
     expect(rawColumnsFor("ga4", "ga4:geo", []).map((c) => c.label)).toContain("country");
+    // GA4's raw date (YYYYMMDD) is not shown: the Day column already has it as YYYY-MM-DD.
+    expect(rawColumnsFor("ga4", "ga4", []).map((c) => c.label)).not.toContain("date");
+    expect(rawColumnsFor("ga4", "ga4:geo", []).map((c) => c.label)).not.toContain("date");
     expect(rawColumnsFor("csv", undefined, [JSON.stringify({ date: "2026-11-01", spend: 1 })]).map((c) => c.path)).toEqual([["date"], ["spend"]]);
   });
 });

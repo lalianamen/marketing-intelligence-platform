@@ -25,11 +25,11 @@ export function rawColumnsFor(origin: string, source: string | undefined, sample
     return [
       ...core.dimensions.map((d, i) => ({ label: d.name, path: ["dimensions", String(i), "value"] })),
       ...core.metrics.map((m, i) => ({ label: m.name, path: ["metrics", String(i), "value"] })),
-    ];
+    ].filter((c) => c.label !== "date"); // GA4's raw YYYYMMDD duplicates the Day column
   }
   if (origin === "ga4" && source?.startsWith("ga4:")) {
     const report = GA4_REPORTS.find((r) => r.id === source.slice(4));
-    if (report) return [...report.dimensions, ...report.metrics].map((f) => ({ label: f.name, path: [f.name] }));
+    if (report) return [...report.dimensions, ...report.metrics].filter((f) => f.name !== "date").map((f) => ({ label: f.name, path: [f.name] }));
   }
   const labels: string[] = [];
   for (const p of samplePayloads) for (const k of Object.keys(flattenRawPayload(origin, p))) if (!labels.includes(k) && labels.length < 30) labels.push(k);
