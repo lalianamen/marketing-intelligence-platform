@@ -29,7 +29,7 @@ export default async function StripeConnectPage({ searchParams }: { searchParams
       <Card title="How to create the key (1 minute)">
         <ol className="list-decimal space-y-2 pl-5 text-sm text-gray-700">
           <li>Open <a className="font-medium text-brand-700 underline" href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener noreferrer">Stripe → Developers → API keys</a>.</li>
-          <li>Click <strong>Create restricted key</strong> (choose “Building your own integration” if Stripe asks).</li>
+          <li>Click <strong>Create restricted key</strong>. When Stripe asks how the key will be used, choose <strong>Powering an integration you built</strong> and click <strong>Continue</strong> (this option shows the list of permissions).</li>
           <li>Name it e.g. <code>marketing-platform</code>. In the list of permissions find <strong>Balance</strong> and set it to <strong>Read</strong>. Leave everything else as <strong>None</strong>.</li>
           <li>Click <strong>Create key</strong>, then <strong>Copy</strong> and paste it here.</li>
         </ol>
