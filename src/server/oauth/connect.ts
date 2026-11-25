@@ -4,7 +4,7 @@ import { encryptSecret } from "../crypto";
 import type { DiscoveredAccount } from "../connectors/google";
 
 export type GoogleProvider = "ga4" | "google_ads" | "google_search_console";
-export type LiveProvider = GoogleProvider | "microsoft_clarity";
+export type LiveProvider = GoogleProvider | "microsoft_clarity" | "stripe";
 
 export function defaultAccountName(provider: GoogleProvider, id: string): string {
   if (provider === "google_search_console") return id;

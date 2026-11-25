@@ -3,6 +3,7 @@ import { Ga4Connector } from "./ga4";
 import { GoogleAdsConnector } from "./googleAds";
 import { SearchConsoleConnector } from "./searchConsole";
 import { ClarityConnector } from "./clarity";
+import { StripeConnector } from "./stripe";
 import { SimulatedConnector } from "./simulated";
 import { type Connector, ConnectorError } from "./types";
 import type { FetchLike } from "./google";
@@ -13,6 +14,10 @@ export function connectorFor(
   cfg: ServerConfig,
   fetchImpl?: FetchLike,
 ): Connector {
+  if (providerId === "stripe") {
+    if (mode !== "live") throw new ConnectorError("not_configured", "no sample data for Stripe");
+    return new StripeConnector({ fetch: fetchImpl });
+  }
   if (providerId === "microsoft_clarity") {
     if (mode !== "live") throw new ConnectorError("not_configured", "no sample data for Clarity");
     return new ClarityConnector({ fetch: fetchImpl });

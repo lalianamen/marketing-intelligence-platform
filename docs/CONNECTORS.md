@@ -191,6 +191,17 @@ Google user can read and connects it:
 - Clarity numbers are not added to dashboard totals (its sessions would repeat GA4's): one empty dashboard row per day
   keeps the day's coverage; the table holds the numbers.
 
+## Stripe (working)
+
+- Connect: Add connector → Stripe → paste a restricted key with **Balance: Read** only (`rk_live_…`); full secret keys
+  (`sk_…`) are refused. Checked with one request, stored encrypted. Test-mode keys are labelled "Stripe (test mode)".
+- Source: `GET /v1/balance_transactions` for the window (company time zone days, pages of 100, starting_after).
+  Amounts converted from the smallest unit (zero- and three-decimal currencies handled).
+- Columns (`src/lib/stripeCatalog.ts`): base `date, currency, transactions, amount, fee, net`; optional
+  `reporting_category, type`, `status`, `id, description` (one row per transaction).
+- Dashboard: billed revenue per day and currency = charges + refunds + disputes (+ reversals); payouts, fees and
+  transfers are not revenue. History can be loaded (up to 400 days, in parts of a month).
+
 ## Future connectors: design notes, no access promised
 
 | Provider | Notes |

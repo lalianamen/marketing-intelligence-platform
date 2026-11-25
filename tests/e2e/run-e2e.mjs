@@ -119,6 +119,14 @@ try {
   assert.equal(await page.locator('[data-testid="clarity-form"]').evaluate((f) => f.checkValidity()), false, "invalid input is stopped in the browser");
   await page.goto(`${BASE}/app/connections/new`);
   step("Microsoft Clarity: connect page asks only for the key, hidden on screen, with step-by-step help");
+  await page.click('a:has-text("Connect with a read-only key")');
+  await page.waitForURL(/\/app\/connections\/stripe$/);
+  await page.fill('[data-testid="stripe-form"] input[name="key"]', ["sk", "live", "xxxxxxxxxxxxxxxxxxxxxxxxxx"].join("_"));
+  assert.equal(await page.locator('[data-testid="stripe-form"]').evaluate((f) => f.checkValidity()), false, "a full secret key is refused");
+  await page.fill('[data-testid="stripe-form"] input[name="key"]', ["rk", "live", "xxxxxxxxxxxxxxxxxxxxxxxxxx"].join("_"));
+  assert.equal(await page.locator('[data-testid="stripe-form"]').evaluate((f) => f.checkValidity()), true);
+  await page.goto(`${BASE}/app/connections/new`);
+  step("Stripe: connect page takes only a read-only key (rk_), refuses secret keys");
 
   await page.goto(`${BASE}/app/connections/csv`);
   await page.setInputFiles('input[name="file"]', "public/sample-marketing-data.csv");

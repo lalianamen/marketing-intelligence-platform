@@ -90,6 +90,7 @@ export const PROVIDER_LABEL: Record<string, string> = {
   google_ads: "Google Ads",
   google_search_console: "Google Search Console",
   microsoft_clarity: "Microsoft Clarity",
+  stripe: "Stripe",
 };
 
 export function modeBadge(mode: string): { tone: "green" | "amber" | "blue"; text: string } {

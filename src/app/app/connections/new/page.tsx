@@ -41,6 +41,13 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
             <LinkButton href="/sample-marketing-data.csv" variant="secondary">Download template</LinkButton>
           </div>
         </Card>
+        <Card title="Stripe" actions={connections.some((c) => c.provider_id === "stripe" && c.mode === "live") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
+          <p className="text-sm text-gray-600">Money actually received: payments, refunds, disputes, fees and payouts. Feeds billed revenue on the dashboard.</p>
+          <div className="mt-4">
+            <LinkButton href="/app/connections/stripe">Connect with a read-only key</LinkButton>
+            <p className="mt-2 text-xs text-gray-500">You create the key in Stripe (Developers → API keys). Takes a minute.</p>
+          </div>
+        </Card>
         <Card title="Microsoft Clarity" actions={connections.some((c) => c.provider_id === "microsoft_clarity" && c.mode === "live") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
           <p className="text-sm text-gray-600">How visitors behave on your site: sessions, scroll depth, engagement time, rage and dead clicks, script errors.</p>
           <div className="mt-4">

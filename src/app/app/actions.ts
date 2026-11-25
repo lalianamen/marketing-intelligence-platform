@@ -473,3 +473,48 @@ export async function connectClarityAction(form: FormData): Promise<void> {
   revalidatePath("/app", "layout");
   redirect(`/app/connections/${id}?setup=1`);
 }
+
+/** Connects Stripe with a restricted read-only key (checked with one small request first). */
+export async function connectStripeAction(form: FormData): Promise<void> {
+  const { user } = await requireUser();
+  const companyId = String(form.get("company_id") ?? "");
+  const key = String(form.get("key") ?? "").trim();
+  const back = (msg: string) => redirect("/app/connections/stripe?error=" + encodeURIComponent(msg));
+  const { checkStripeKey, stripeKeyProblem } = await import("@/server/connectors/stripe");
+  const problem = stripeKeyProblem(key);
+  if (problem) back(problem);
+  const db = getPool();
+  const cfg = loadConfig();
+  if (!cfg.tokenEncryptionKey) back("Connections are not configured on this server yet.");
+  if ((await getCompanyAccess(db, user.id, companyId)) !== "manage") back("Not found, or you do not have access.");
+  let testMode = false;
+  try {
+    ({ testMode } = await checkStripeKey(fetch, key));
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    console.error(JSON.stringify({ level: "warn", msg: "stripe.connect_check_failed", code, error: String((err as Error).message).slice(0, 200) }));
+    back(
+      code === "auth_expired"
+        ? "Stripe did not accept this key. Check that it was copied completely."
+        : code === "permission_denied"
+        ? "The key cannot read money movements. In Stripe, edit the key and set Balance to Read."
+        : "Could not reach Stripe. Please try again in a minute.",
+    );
+  }
+  const ws = (await db.query<{ workspace_id: string }>(`select workspace_id from public.companies where id = $1`, [companyId])).rows[0]!.workspace_id;
+  const { sha256Hex } = await import("@/server/crypto");
+  const id = await withTransaction((c) =>
+    createLiveConnection(c, {
+      workspaceId: ws,
+      companyId,
+      userId: user.id,
+      provider: "stripe",
+      account: { id: "key-" + sha256Hex(key).slice(0, 12), name: testMode ? "Stripe (test mode)" : "Stripe", group: null },
+      refreshToken: key,
+      scopes: [],
+      encryptionKey: cfg.tokenEncryptionKey!,
+    }),
+  );
+  revalidatePath("/app", "layout");
+  redirect(`/app/connections/${id}?setup=1`);
+}
