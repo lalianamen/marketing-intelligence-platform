@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { clearConnectorForReload, loadConnection, loadRawPage, setGa4Report } from "@/server/connections/manage";
+import { clearConnectorForReload, loadConnection, loadRawPage, setGa4Groups, setGa4Report } from "@/server/connections/manage";
 import type { Connector, FetchContext } from "@/server/connectors/types";
 import { ga4Fields } from "@/lib/ga4Catalog";
 import { parseRawTableParams } from "@/lib/rawTable";
@@ -86,6 +86,15 @@ describe("GA4 one table", () => {
     await expect(setGa4Report(pool, deps.getWarehouse, U.id, conn, "landing_pages", true)).rejects.toThrow(/at most 9 breakdowns/);
     expect((await loadConnection(pool, U.id, conn))!.settings.ga4_reports).toEqual(["traffic_sources", "devices"]);
     await setGa4Report(pool, deps.getWarehouse, U.id, conn, "devices", false);
+  });
+
+  it("several groups are saved in one go; saving the same set changes nothing", async () => {
+    const deps = await workerDeps();
+    expect(await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources"])).toEqual({ changed: false, added: [], removed: [] });
+    expect(await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["engagement", "traffic_sources", "users"])).toEqual({ changed: true, added: ["engagement", "users"], removed: [] });
+    await expect(setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources", "devices", "landing_pages"])).rejects.toThrow(/at most 9 breakdowns/);
+    expect((await loadConnection(pool, U.id, conn))!.settings.ga4_reports).toEqual(["traffic_sources", "engagement", "users"]);
+    await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources"]);
   });
 
   it("a change after the first load deletes all of the connector's data and reloads only the last 30 days", async () => {

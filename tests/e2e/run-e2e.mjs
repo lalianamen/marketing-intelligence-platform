@@ -243,7 +243,6 @@ try {
       `insert into public.company_connections (workspace_id, company_id, provider_id, mode, status, external_account_id, external_account_name, activated_at)
        values ($1, $2, 'ga4', 'live', 'connected', '999', 'Demo property', null) returning id`, [co.workspace_id, co.id])).rows[0].id;
     await db.query(`insert into public.sync_schedules (workspace_id, company_id, connection_id, frequency, local_time, timezone, enabled) values ($1, $2, $3, 'daily', '06:00', 'America/Los_Angeles', false)`, [co.workspace_id, co.id, live]);
-    await db.end();
     await page.goto(`${BASE}/app/connections`);
     await page.locator('[data-testid="connection-row"]:has-text("Demo property") a:has-text("Finish setup")').click();
     await page.getByTestId("connector-setup").waitFor();
@@ -253,6 +252,34 @@ try {
     assert.ok(await page.getByTestId("ga4-catalog").evaluate((d) => d.open), "report list is open during setup");
     await page.screenshot({ path: `${OUT}/11-setup.png`, fullPage: true });
     step("new live connector opens in setup: choose data, period and schedule before any load");
+
+    // Data groups are a draft until Save: switching changes nothing on the server.
+    const bar = page.getByTestId("ga4-picker-bar");
+    await page.click('button[role="switch"][aria-label="Traffic sources"]');
+    await page.click('button[role="switch"][aria-label="Devices and technology"]');
+    await bar.getByText("Unsaved changes").waitFor();
+    assert.ok(await bar.getByText("9 of 9 breakdowns").isVisible(), "draft counts update live");
+    await page.click('button:has-text("Undo changes")');
+    await bar.getByText("No changes").waitFor();
+    await page.click('button[role="switch"][aria-label="Traffic sources"]');
+    await page.click('[data-testid="ga4-picker"] button[type="submit"]:has-text("Save")');
+    await page.getByText("Saved. These columns will be in the table").waitFor();
+    const saved = (await db.query(`select settings->'ga4_reports' as g from public.company_connections where id = $1`, [live])).rows[0].g;
+    assert.deepEqual(saved, ["traffic_sources"], "saved only on Save");
+
+    // After the first load, Save asks before deleting and reloading; Cancel changes nothing.
+    await db.query(`update public.company_connections set activated_at = now() where id = $1`, [live]);
+    await page.goto(`${BASE}/app/connections/${live}#ga4-reports`);
+    await page.click('[data-testid="ga4-catalog"] summary');
+    await page.click('button[role="switch"][aria-label="Devices and technology"]');
+    await page.click('button:has-text("Save and reload…")');
+    await page.locator("dialog[open]").getByText("The whole current table of this connector will be deleted").waitFor();
+    assert.ok(await page.locator("dialog[open]").getByText("Add: Devices and technology").isVisible());
+    await page.locator("dialog[open]").getByRole("button", { name: "Cancel" }).click();
+    const still = (await db.query(`select settings->'ga4_reports' as g from public.company_connections where id = $1`, [live])).rows[0].g;
+    assert.deepEqual(still, ["traffic_sources"], "cancel keeps the saved set");
+    await db.end();
+    step("data groups: pick several, then Save; after the first load Save warns before reloading");
   }
 
   await page.goto(`${BASE}/app?days=90`);

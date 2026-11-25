@@ -17,8 +17,9 @@ import { parseRawTableParams, rawTableQuery, valueAt } from "@/lib/rawTable";
 import { RawFilterRow } from "@/components/RawFilterRow";
 import { ScrollX } from "@/components/ScrollX";
 import { Expandable } from "@/components/Expandable";
-import { GA4_GROUPS, GA4_MAX_DIMENSIONS, GA4_MAX_METRICS, ga4Fields, ga4SelectionProblem, sanitizeGa4Groups } from "@/lib/ga4Catalog";
-import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, startLoadingAction, syncNowAction, toggleGa4ReportAction, updateScheduleAction } from "../../actions";
+import { GA4_GROUPS, GA4_MAX_DIMENSIONS, GA4_MAX_METRICS, ga4Fields, sanitizeGa4Groups } from "@/lib/ga4Catalog";
+import { Ga4GroupPicker } from "@/components/Ga4GroupPicker";
+import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, startLoadingAction, syncNowAction, saveGa4GroupsAction, updateScheduleAction } from "../../actions";
 import { addDays, localDate } from "@/lib/dates";
 
 const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
@@ -141,80 +142,25 @@ export default async function ConnectionPage({ params, searchParams }: { params:
       )}
 
       {isGa4Live && (
-        <details id="ga4-reports" className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog" open={inSetup || Boolean(sp.enabled || sp.disabled || sp.report)}>
+        <details id="ga4-reports" className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog" open={inSetup || Boolean(sp.groups_saved || sp.groups_unchanged || sp.error)}>
           <summary className="cursor-pointer text-base font-semibold">Data in the table <span className="ml-2 text-sm font-normal text-gray-500">{fieldsNow.dimensions.length} of {GA4_MAX_DIMENSIONS} breakdowns · {fieldsNow.metrics.length} of {GA4_MAX_METRICS} numbers</span></summary>
           <p className="mt-2 text-xs text-gray-500">
             {inSetup
               ? "Switch on everything you want in the table before the first load. Each group adds its columns to the same table."
-              : "Each group adds its columns to the one table. Changing this list deletes all data of this connector and loads the last 30 days again."}
+              : "Each group adds its columns to the one table. Choose everything first, then press Save: only then all data of this connector is deleted and the last 30 days are loaded again."}
             {" "}GA4 allows at most {GA4_MAX_DIMENSIONS} breakdowns and {GA4_MAX_METRICS} numbers in one table.
           </p>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {GA4_GROUPS.map((g) => {
-              const on = Boolean(g.core) || enabledReports.includes(g.id);
-              const blocked = !on ? ga4SelectionProblem([...enabledReports, g.id]) : null;
-              return (
-                <section key={g.id} className={`rounded-lg border p-3 ${on ? "border-green-200 bg-green-50/40" : "border-gray-100"}`} data-testid={`ga4-report-${g.id}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900">{g.title}</h3>
-                      <p className="text-xs text-gray-600">{g.summary}</p>
-                    </div>
-                    {g.core ? (
-                      <Badge tone="green">always on</Badge>
-                    ) : blocked ? (
-                      <Badge tone="gray" title={blocked}>limit reached</Badge>
-                    ) : canManage && !inSetup ? (
-                      <ConfirmButton
-                        action={toggleGa4ReportAction}
-                        fields={{ connection_id: c.id, report: g.id, on: on ? "false" : "true" }}
-                        label={on ? "Turn off" : "Turn on"}
-                        triggerLabel={`${on ? "Turn off" : "Turn on"} ${g.title}`}
-                        triggerClassName={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-green-600" : "bg-gray-300"}`}
-                        trigger={<span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${on ? "translate-x-5" : "translate-x-0.5"}`} />}
-                        title={`${on ? "Remove" : "Add"} “${g.title}” and reload?`}
-                        lines={[
-                          "All data of this connector will be deleted — from the database and from the table, including the dashboard numbers.",
-                          `A new load then starts from scratch with the new set of columns, for the last 30 days only.`,
-                          "Loading takes time. Until it finishes, the table and the dashboard show only the days loaded so far. Older days can be added afterwards with Load history.",
-                        ]}
-                        confirmLabel="Delete tables and reload"
-                        pendingLabel="Restarting…"
-                      />
-                    ) : canManage ? (
-                      <form action={toggleGa4ReportAction}>
-                        <input type="hidden" name="connection_id" value={c.id} />
-                        <input type="hidden" name="report" value={g.id} />
-                        <input type="hidden" name="on" value={on ? "false" : "true"} />
-                        <button
-                          aria-pressed={on}
-                          aria-label={`${on ? "Turn off" : "Turn on"} ${g.title}`}
-                          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-green-600" : "bg-gray-300"}`}
-                        >
-                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${on ? "translate-x-5" : "translate-x-0.5"}`} />
-                        </button>
-                        <span className="sr-only">{on ? "On" : "Off"}</span>
-                      </form>
-                    ) : (
-                      <Badge tone={on ? "green" : "gray"}>{on ? "on" : "off"}</Badge>
-                    )}
-                  </div>
-                  {g.note && <p className="mt-1 text-xs text-amber-800">{g.note}</p>}
-                  {blocked && <p className="mt-1 text-xs text-gray-500">{blocked}</p>}
-                  {g.dimensions.length + g.metrics.length > 0 && (
-                    <ul className="mt-2 space-y-1 text-xs">
-                      {[...g.dimensions, ...g.metrics].map((f) => (
-                        <li key={f.name} className="flex gap-2">
-                          <code className="shrink-0 font-mono text-gray-800">{f.name}</code>
-                          <span className="text-gray-600">{f.description}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              );
-            })}
-          </div>
+          {sp.groups_saved && <div className="mt-3"><Notice tone="green">Saved. These columns will be in the table from the first load.</Notice></div>}
+          {sp.groups_unchanged && <div className="mt-3"><Notice tone="blue">Nothing changed, so nothing was deleted or reloaded.</Notice></div>}
+          <Ga4GroupPicker
+            key={enabledReports.join(",")}
+            action={saveGa4GroupsAction}
+            connectionId={c.id}
+            groups={GA4_GROUPS}
+            saved={enabledReports}
+            canManage={canManage}
+            reloadOnSave={!inSetup}
+          />
         </details>
       )}
 

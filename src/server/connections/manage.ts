@@ -174,19 +174,36 @@ export async function loadRuns(db: Queryable, connectionId: string, limit = 20) 
  */
 export async function setGa4Report(
   db: Queryable,
-  _getWarehouse: (p: WarehouseProvider) => Promise<Warehouse>,
+  getWarehouse: (p: WarehouseProvider) => Promise<Warehouse>,
   userId: string,
   connectionId: string,
   groupId: string,
   on: boolean,
 ): Promise<{ changed: boolean }> {
   const c = await requireManage(db, userId, connectionId);
-  if (c.provider_id !== "ga4" || c.mode !== "live") throw new Error("data groups can be chosen only for live GA4 connectors");
   if (!GA4_OPTIONAL_GROUPS.some((g) => g.id === groupId)) throw new Error("unknown report");
   const current = sanitizeGa4Groups(c.settings?.ga4_reports);
-  const next = sanitizeGa4Groups(on ? [...current, groupId] : current.filter((g) => g !== groupId));
+  return setGa4Groups(db, getWarehouse, userId, connectionId, on ? [...current, groupId] : current.filter((g) => g !== groupId));
+}
+
+/** Saves the whole chosen set of GA4 groups at once (the user picks first, then saves). */
+export async function setGa4Groups(
+  db: Queryable,
+  _getWarehouse: (p: WarehouseProvider) => Promise<Warehouse>,
+  userId: string,
+  connectionId: string,
+  groups: string[],
+): Promise<{ changed: boolean; added: string[]; removed: string[] }> {
+  const c = await requireManage(db, userId, connectionId);
+  if (c.provider_id !== "ga4" || c.mode !== "live") throw new Error("data groups can be chosen only for live GA4 connectors");
+  if (groups.some((g) => !GA4_OPTIONAL_GROUPS.some((o) => o.id === g))) throw new Error("unknown report");
+  const current = sanitizeGa4Groups(c.settings?.ga4_reports);
+  const next = sanitizeGa4Groups(groups);
   const problem = ga4SelectionProblem(next);
   if (problem) throw new Error(problem);
+  const added = next.filter((g) => !current.includes(g));
+  const removed = current.filter((g) => !next.includes(g));
+  if (added.length === 0 && removed.length === 0) return { changed: false, added, removed };
   await db.query(
     `update public.company_connections set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{ga4_reports}', $2::jsonb), updated_at = now() where id = $1`,
     [c.id, JSON.stringify(next)],
@@ -194,9 +211,9 @@ export async function setGa4Report(
   await db.query(
     `insert into public.audit_logs (workspace_id, company_id, actor_user_id, action, target_type, target_id, metadata)
      values ($1, $2, $3, 'connection.report_toggled', 'connection', $4, $5)`,
-    [c.workspace_id, c.company_id, userId, c.id, JSON.stringify({ group: groupId, on })],
+    [c.workspace_id, c.company_id, userId, c.id, JSON.stringify({ groups: next, added, removed })],
   );
-  return { changed: JSON.stringify(next) !== JSON.stringify(current) };
+  return { changed: true, added, removed };
 }
 
 /** One page (or an export) of a connector's raw rows with period, filters and sorting. */

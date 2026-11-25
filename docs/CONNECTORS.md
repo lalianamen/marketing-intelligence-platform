@@ -121,7 +121,9 @@ Google user can read and connects it:
   time or manual only, with a note to switch everything on before the first load. "Start loading" saves the schedule,
   queues the period in parts of up to one month (`request_history`) and sets `activated_at`.
 - Reconnecting after an expired sign-in keeps the schedule; reconnecting a disconnected connector goes through setup again.
-- After the first load, switching a data group on or off asks for confirmation: all data of the connector (dashboard
+- Switches are a draft (`Ga4GroupPicker`): nothing is saved or deleted until Save; "Undo changes" restores the
+  saved set; the bar shows the live counts and what will be added or removed. In setup, Save only stores the set.
+- After the first load, Save (with at least one real change) asks for confirmation: all data of the connector (dashboard
   rows and raw rows, in the warehouse and in the table) is deleted, the dashboard days are rebuilt, queued parts are
   cancelled and only the last 30 complete days are loaded again with the new columns. Older days can be added with
   Load history. This keeps every row of the table in one format; loading again takes time.

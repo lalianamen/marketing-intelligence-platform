@@ -16,7 +16,7 @@ import { getCompanyAccess } from "@/server/auth/authz";
 import { decryptSecret } from "@/server/crypto";
 import { withTransaction } from "@/server/db";
 import { createLiveConnection, type GoogleProvider } from "@/server/oauth/connect";
-import { clearConnectorForReload, deleteConnection, setGa4Report, updateSchedule } from "@/server/connections/manage";
+import { clearConnectorForReload, deleteConnection, setGa4Groups, updateSchedule } from "@/server/connections/manage";
 import { localDate, addDays } from "@/lib/dates";
 import { getWarehouse } from "@/server/warehouse";
 import type { DiscoveredAccount } from "@/server/connectors/google";
@@ -291,11 +291,15 @@ export async function deleteConnectionAction(form: FormData): Promise<void> {
   redirect("/app/connections?deleted=" + encodeURIComponent(name));
 }
 
-export async function toggleGa4ReportAction(form: FormData): Promise<void> {
+/**
+ * Saves the chosen GA4 groups in one go. In setup the choice is only remembered.
+ * After the first load a real change deletes all of the connector's data and
+ * loads the last 30 days again with the new columns.
+ */
+export async function saveGa4GroupsAction(form: FormData): Promise<void> {
   const { supabase, user } = await requireUser();
   const id = String(form.get("connection_id") ?? "");
-  const report = String(form.get("report") ?? "");
-  const on = String(form.get("on") ?? "") === "true";
+  const groups = form.getAll("group").map(String);
   const cfg = loadConfig();
   const db = getPool();
   const conn = (await db.query<{ activated_at: Date | null; timezone: string }>(
@@ -303,18 +307,15 @@ export async function toggleGa4ReportAction(form: FormData): Promise<void> {
     [id],
   )).rows[0];
   const back = (msg: string) => redirect(`/app/connections/${id}?error=` + encodeURIComponent(msg) + "#ga4-reports");
+  let changed = false;
   try {
-    await setGa4Report(db, (p) => getWarehouse(p, cfg), user.id, id, report, on);
+    changed = (await setGa4Groups(db, (p) => getWarehouse(p, cfg), user.id, id, groups)).changed;
   } catch (err) {
     const m = (err as Error).message;
     back(/GA4 allows/.test(m) ? m : friendly(m));
   }
-  if (!conn?.activated_at) {
-    // Still in setup: just remember the choice; nothing is loaded yet.
-    redirect(`/app/connections/${id}?setup=1#ga4-reports`);
-  }
-  // After the first load, a change of the collected data restarts the connector:
-  // its tables are deleted and the same period is loaded again with the new set.
+  if (!conn?.activated_at) redirect(`/app/connections/${id}?setup=1&groups_saved=1#ga4-reports`);
+  if (!changed) redirect(`/app/connections/${id}?groups_unchanged=1#ga4-reports`);
   const yesterday = addDays(localDate(new Date(), conn!.timezone), -1);
   let period: { from: string; to: string };
   try {
