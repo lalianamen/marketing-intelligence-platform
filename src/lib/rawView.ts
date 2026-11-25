@@ -1,11 +1,11 @@
 // Turns stored raw provider payloads into flat, labelled table rows for display.
 
-import { GA4_REPORTS } from "./ga4Catalog";
+import { GA4_CORE } from "./ga4Catalog";
 
-const CORE = GA4_REPORTS.find((r) => r.core)!;
+const CORE = GA4_CORE;
 /** GA4 core report columns the connector requests, in order; raw records keep values in this order. */
-export const GA4_DIMENSIONS = CORE.dimensions.map((d) => d.name);
-export const GA4_METRICS = CORE.metrics.map((m) => m.name);
+export const GA4_DIMENSIONS = CORE.dimensions.map((d: { name: string }) => d.name);
+export const GA4_METRICS = CORE.metrics.map((m: { name: string }) => m.name);
 
 function flatten(value: unknown, prefix: string, out: Record<string, string>): void {
   if (value === null || value === undefined) {
@@ -31,8 +31,8 @@ export function flattenRawPayload(origin: string, payloadJson: string): Record<s
   const p = payload as { dimensions?: { value?: string }[]; metrics?: { value?: string }[] };
   if (origin === "ga4" && Array.isArray(p?.dimensions) && Array.isArray(p?.metrics)) {
     const out: Record<string, string> = {};
-    GA4_DIMENSIONS.forEach((n, i) => (out[n] = p.dimensions![i]?.value ?? ""));
-    GA4_METRICS.forEach((n, i) => (out[n] = p.metrics![i]?.value ?? ""));
+    GA4_DIMENSIONS.forEach((n: string, i: number) => (out[n] = p.dimensions![i]?.value ?? ""));
+    GA4_METRICS.forEach((n: string, i: number) => (out[n] = p.metrics![i]?.value ?? ""));
     return out;
   }
   const out: Record<string, string> = {};

@@ -15,19 +15,19 @@ describe("raw data view", () => {
   });
 });
 
-describe("GA4 catalog", () => {
-  it("core report is what the connector requests; every switchable report fits GA4 limits", async () => {
-    const { GA4_REPORTS, GA4_OPTIONAL_REPORTS, sanitizeGa4Reports } = await import("@/lib/ga4Catalog");
+describe("GA4 one-table catalog", () => {
+  it("base fields are what the connector always requests; groups add columns within GA4 limits", async () => {
+    const { GA4_CORE, ga4Fields, ga4SelectionProblem, sanitizeGa4Groups } = await import("@/lib/ga4Catalog");
     const { GA4_DIMENSIONS, GA4_METRICS } = await import("@/lib/rawView");
-    const core = GA4_REPORTS.find((r) => r.core)!;
-    expect(core.dimensions.map((d) => d.name)).toEqual([...GA4_DIMENSIONS]);
-    expect(core.metrics.map((m) => m.name)).toEqual([...GA4_METRICS]);
-    for (const r of GA4_OPTIONAL_REPORTS) {
-      expect(r.dimensions[0]!.name).toBe("date");
-      expect(r.dimensions.length).toBeLessThanOrEqual(9); // GA4 runReport limit
-      expect(r.metrics.length).toBeGreaterThan(0);
-      expect(r.metrics.length).toBeLessThanOrEqual(10);
-    }
-    expect(sanitizeGa4Reports(["geo", "core", "nope", "raw_events", "traffic_sources"])).toEqual(["traffic_sources", "geo"]);
+    expect(GA4_CORE.dimensions.map((d) => d.name)).toEqual([...GA4_DIMENSIONS]);
+    expect(GA4_CORE.metrics.map((m) => m.name)).toEqual([...GA4_METRICS]);
+    expect(ga4Fields([]).dimensions).toEqual(["date", "sessionCampaignId", "sessionCampaignName"]);
+    expect(ga4Fields(["devices", "traffic_sources"]).dimensions).toEqual([
+      "date", "sessionCampaignId", "sessionCampaignName", "sessionSource", "sessionMedium", "sessionDefaultChannelGroup", "deviceCategory", "operatingSystem", "browser",
+    ]);
+    expect(ga4SelectionProblem(["traffic_sources", "devices"])).toBeNull(); // 9 breakdowns: the limit
+    expect(ga4SelectionProblem(["traffic_sources", "devices", "landing_pages"])).toMatch(/at most 9 breakdowns/);
+    expect(ga4SelectionProblem(["engagement", "users", "conversions"])).toBeNull(); // 10 numbers
+    expect(sanitizeGa4Groups(["geo", "core", "nope", "traffic_sources"])).toEqual(["traffic_sources", "geo"]);
   });
 });

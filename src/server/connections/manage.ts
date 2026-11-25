@@ -4,7 +4,7 @@ import { AccessDeniedError, getCompanyAccess } from "../auth/authz";
 import { getResourceForCompany, toDatasetRef } from "../registry/registry";
 import { computeNextRun } from "../scheduling/schedule";
 import type { RawRecord } from "../../lib/model";
-import { GA4_OPTIONAL_REPORTS, sanitizeGa4Reports } from "../../lib/ga4Catalog";
+import { GA4_OPTIONAL_GROUPS, ga4SelectionProblem, sanitizeGa4Groups } from "../../lib/ga4Catalog";
 import { type RawColumn, type RawTableParams, rawColumnsFor } from "../../lib/rawTable";
 import type { Warehouse, WarehouseProvider } from "../warehouse/types";
 
@@ -174,41 +174,29 @@ export async function loadRuns(db: Queryable, connectionId: string, limit = 20) 
  */
 export async function setGa4Report(
   db: Queryable,
-  getWarehouse: (p: WarehouseProvider) => Promise<Warehouse>,
+  _getWarehouse: (p: WarehouseProvider) => Promise<Warehouse>,
   userId: string,
   connectionId: string,
-  reportId: string,
+  groupId: string,
   on: boolean,
-): Promise<{ backfill: boolean }> {
+): Promise<{ changed: boolean }> {
   const c = await requireManage(db, userId, connectionId);
-  if (c.provider_id !== "ga4" || c.mode !== "live") throw new Error("reports can be chosen only for live GA4 connectors");
-  if (!GA4_OPTIONAL_REPORTS.some((r) => r.id === reportId)) throw new Error("unknown report");
-  const current = sanitizeGa4Reports(c.settings?.ga4_reports);
-  const next = sanitizeGa4Reports(on ? [...current, reportId] : current.filter((r) => r !== reportId));
+  if (c.provider_id !== "ga4" || c.mode !== "live") throw new Error("data groups can be chosen only for live GA4 connectors");
+  if (!GA4_OPTIONAL_GROUPS.some((g) => g.id === groupId)) throw new Error("unknown report");
+  const current = sanitizeGa4Groups(c.settings?.ga4_reports);
+  const next = sanitizeGa4Groups(on ? [...current, groupId] : current.filter((g) => g !== groupId));
+  const problem = ga4SelectionProblem(next);
+  if (problem) throw new Error(problem);
   await db.query(
     `update public.company_connections set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{ga4_reports}', $2::jsonb), updated_at = now() where id = $1`,
     [c.id, JSON.stringify(next)],
   );
-  if (!on) {
-    const resource = await getResourceForCompany(db, c.company_id);
-    if (resource?.status === "ready") {
-      const wh = await getWarehouse(resource.provider);
-      await wh.deleteConnectionData(toDatasetRef(resource), {
-        origin: "ga4",
-        isSimulated: false,
-        accountId: c.external_account_id,
-        syncRunIds: await runIds(db, c.id),
-        rawSources: [`ga4:${reportId}`],
-        skipNormalized: true,
-      });
-    }
-  }
   await db.query(
     `insert into public.audit_logs (workspace_id, company_id, actor_user_id, action, target_type, target_id, metadata)
      values ($1, $2, $3, 'connection.report_toggled', 'connection', $4, $5)`,
-    [c.workspace_id, c.company_id, userId, c.id, JSON.stringify({ report: reportId, on })],
+    [c.workspace_id, c.company_id, userId, c.id, JSON.stringify({ group: groupId, on })],
   );
-  return { backfill: on && !current.includes(reportId) };
+  return { changed: JSON.stringify(next) !== JSON.stringify(current) };
 }
 
 /** One page (or an export) of a connector's raw rows with period, filters and sorting. */
@@ -227,11 +215,8 @@ export async function loadRawPage(
   const ids = await runIds(db, c.id);
   const wh = await getWarehouse(resource.provider);
   const ref = toDatasetRef(resource);
-  let columns = rawColumnsFor(c.provider_id, opts.source, []);
-  if (columns.length === 0) {
-    const sample = await wh.queryRawPage(ref, { syncRunIds: ids, source: opts.source, limit: 20, offset: 0 });
-    columns = rawColumnsFor(c.provider_id, opts.source, sample.rows.map((r) => r.payload_json));
-  }
+  const sample = await wh.queryRawPage(ref, { syncRunIds: ids, source: opts.source, limit: 20, offset: 0 });
+  const columns = rawColumnsFor(c.provider_id, sample.rows.map((r) => r.payload_json), c.settings?.ga4_reports);
   const byLabel = new Map(columns.map((col) => [col.label, col.path]));
   const filters = opts.ignoreFilters
     ? []
@@ -261,9 +246,8 @@ export async function loadRawPage(
 
 /**
  * Changing what a connector collects after its first load restarts it: all its
- * stored rows (dashboard and raw, every report) are deleted, the dashboard days
- * are rebuilt, queued history parts are cancelled, and the period that was
- * loaded (from its first day to yesterday, at most 400 days) is returned so the
+ * stored rows (dashboard and raw) are deleted, the dashboard days are rebuilt,
+ * queued parts are cancelled, and the last 30 complete days are returned so the
  * caller can queue a fresh load with the new set of data.
  */
 export async function clearConnectorForReload(
@@ -299,9 +283,9 @@ export async function clearConnectorForReload(
      values ($1, $2, $3, 'connection.data_restarted', 'connection', $4)`,
     [c.workspace_id, c.company_id, userId, c.id],
   );
-  const earliest = addDaysIso(yesterday, -399);
-  const start = from && from >= earliest ? from : from ? earliest : addDaysIso(yesterday, -29);
-  return { from: start > yesterday ? yesterday : start, to: yesterday };
+  void from;
+  // After a change of the collected data, only the last 30 complete days are loaded again.
+  return { from: addDaysIso(yesterday, -29), to: yesterday };
 }
 
 function addDaysIso(d: string, n: number): string {

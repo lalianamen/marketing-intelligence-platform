@@ -117,36 +117,37 @@ Google user can read and connects it:
 ## Setup before the first load
 
 - A newly connected live source loads nothing (`company_connections.activated_at` is null, schedule off). The connector
-  page shows setup: 1) which reports to collect, 2) the period (default last 30 complete days, up to 400), 3) daily
+  page shows setup: 1) which data groups to collect, 2) the period (default last 30 complete days, up to 400), 3) daily
   time or manual only, with a note to switch everything on before the first load. "Start loading" saves the schedule,
   queues the period in parts of up to one month (`request_history`) and sets `activated_at`.
 - Reconnecting after an expired sign-in keeps the schedule; reconnecting a disconnected connector goes through setup again.
-- After the first load, switching a report on or off asks for confirmation: the connector's whole current table
-  (dashboard rows and every report's raw rows) is deleted, the dashboard days are rebuilt, queued parts are cancelled and
-  the same period (from its first loaded day, at most 400 days) is loaded again with the new set of data. This keeps
-  every table uniform; loading again takes time.
+- After the first load, switching a data group on or off asks for confirmation: all data of the connector (dashboard
+  rows and raw rows, in the warehouse and in the table) is deleted, the dashboard days are rebuilt, queued parts are
+  cancelled and only the last 30 complete days are loaded again with the new columns. Older days can be added with
+  Load history. This keeps every row of the table in one format; loading again takes time.
 
 ## Raw data table and export
 
 - Connector page → Raw data: period (7/30/90 days, all, or from–to; default last 30 complete days), up to three
   column filters (contains, equals, >, <; numbers compared as numbers), sorting by clicking a column, 100 rows per page
   with the total count. Filtering, sorting and paging run in the warehouse (`queryRawPage`), not in the browser.
-- Columns map to JSON paths in `payload_json` (GA4 core values by position, extra reports and CSV by name). Paths are
+- Columns map to JSON paths in `payload_json` (GA4 and CSV fields by name; GA4 rows stored before the one-table change keep the base fields by position and are still shown). Paths are
   validated to `[A-Za-z0-9_]` segments before they are used in SQL.
 - `/app/connections/<id>/export`: CSV of the current view, or `full=1` for the whole stored period without filters;
   at most 50,000 rows per file; UTF-8 with BOM; cells starting with = + - @ are prefixed to stop spreadsheet formulas.
 
-## Switchable GA4 reports
+## GA4: one table, switchable data groups
 
-- Catalog: `src/lib/ga4Catalog.ts` (one source of truth for field names and descriptions). The "core" report
-  (date, campaign id/name, sessions, key events, total revenue) feeds normalized rows and the dashboard; always on.
-- Every other report is switched on/off per connector on the connector page (`company_connections.settings.ga4_reports`,
-  written by the server after an access check). Each is a separate GA4 `runReport` (date + its dimensions, ≤ 9
-  dimensions, ≤ 10 metrics) stored only in `raw_records` with `source = 'ga4:<report>'`, never in dashboard totals.
-- On: the last 30 complete days are requested right away. Off: the report's raw rows are deleted.
-- A failing extra report (e.g. Google Ads not linked, quota) is recorded as a data-quality warning; the core import
-  still succeeds and that report's previous rows are kept (raw rows are replaced only for reports fetched completely).
-- Planned: plan tiers will mark reports as basic or extended; switching is then checked against the workspace plan.
+- Catalog: `src/lib/ga4Catalog.ts` (one source of truth for field names, descriptions and GA4 limits). Base fields
+  (date, campaign id/name, sessions, key events, total revenue) are always requested and feed the dashboard.
+- Optional groups (traffic sources, devices, geography, landing pages, engagement, users, conversions) are switched
+  on/off per connector (`company_connections.settings.ga4_reports`, written by the server after an access check).
+  Each switched-on group adds its columns to the same table: one `runReport` with base + group fields.
+- GA4 allows at most 9 dimensions and 10 metrics per request; a selection over the limit is refused before anything
+  changes (`ga4SelectionProblem`), the page marks such groups "limit reached".
+- Each raw row's id includes all requested dimension values (`rawKey`), so rows split by a breakdown stay separate;
+  for the dashboard, rows of one campaign and day are summed back, so totals do not change when columns are added.
+- Planned: plan tiers will mark groups as basic or extended; switching is then checked against the workspace plan.
 
 ## Future connectors: design notes, no access promised
 

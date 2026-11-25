@@ -306,7 +306,8 @@ export async function toggleGa4ReportAction(form: FormData): Promise<void> {
   try {
     await setGa4Report(db, (p) => getWarehouse(p, cfg), user.id, id, report, on);
   } catch (err) {
-    back(friendly((err as Error).message));
+    const m = (err as Error).message;
+    back(/GA4 allows/.test(m) ? m : friendly(m));
   }
   if (!conn?.activated_at) {
     // Still in setup: just remember the choice; nothing is loaded yet.

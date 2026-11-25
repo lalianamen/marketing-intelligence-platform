@@ -23,13 +23,14 @@ describe("raw table parameters", () => {
     expect(csvCell("=HYPERLINK(1)")).toBe("'=HYPERLINK(1)");
     expect(csvCell("-12.5")).toBe("-12.5");
   });
-  it("GA4 core columns point at stored positions; extra reports at named fields", () => {
-    expect(rawColumnsFor("ga4", "ga4", []).find((c) => c.label === "sessions")!.path).toEqual(["metrics", "0", "value"]);
-    expect(rawColumnsFor("ga4", "ga4:geo", []).map((c) => c.label)).toContain("country");
-    // GA4's raw date (YYYYMMDD) is not shown: the Day column already has it as YYYY-MM-DD.
-    expect(rawColumnsFor("ga4", "ga4", []).map((c) => c.label)).not.toContain("date");
-    expect(rawColumnsFor("ga4", "ga4:geo", []).map((c) => c.label)).not.toContain("date");
-    expect(rawColumnsFor("csv", undefined, [JSON.stringify({ date: "2026-11-01", spend: 1 })]).map((c) => c.path)).toEqual([["date"], ["spend"]]);
+  it("GA4 table columns follow the chosen groups; older rows stored by position still show", () => {
+    const named = JSON.stringify({ date: "20261101", sessionCampaignName: "(organic)", sessionSource: "google", sessions: "3" });
+    const cols = rawColumnsFor("ga4", [named], ["traffic_sources"]);
+    expect(cols.map((c) => c.label)).toEqual(["sessionCampaignId", "sessionCampaignName", "sessionSource", "sessionMedium", "sessionDefaultChannelGroup", "sessions", "keyEvents", "totalRevenue"]);
+    expect(cols.find((c) => c.label === "sessions")!.path).toEqual(["sessions"]);
+    const legacy = JSON.stringify({ dimensions: [{ value: "20261101" }], metrics: [{ value: "3" }] });
+    expect(rawColumnsFor("ga4", [legacy], ["traffic_sources"]).find((c) => c.label === "sessions")!.path).toEqual(["metrics", "0", "value"]);
+    expect(rawColumnsFor("csv", [JSON.stringify({ date: "2026-11-01", spend: 1 })]).map((c) => c.path)).toEqual([["date"], ["spend"]]);
   });
 });
 

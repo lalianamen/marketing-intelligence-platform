@@ -1,7 +1,6 @@
 import { GA4_SCOPE, type FetchLike, postJson, refreshAccessToken } from "./google";
-import { GA4_DIMENSIONS, GA4_METRICS } from "../../lib/rawView";
-import { ga4ReportById, sanitizeGa4Reports } from "../../lib/ga4Catalog";
-import { type Connector, ConnectorError, type ExtraRawRecord, type FetchContext, type FetchResult, type ProviderDailyRecord } from "./types";
+import { ga4Fields } from "../../lib/ga4Catalog";
+import { type Connector, ConnectorError, type FetchContext, type FetchResult, type ProviderDailyRecord } from "./types";
 
 // GA4 LIVE connector — Google Analytics Data API v1beta `runReport`.
 // MVP pathway: daily REPORT metrics per session campaign (not raw events).
@@ -41,6 +40,8 @@ export class Ga4Connector implements Connector {
     if (!/^\d{1,20}$/.test(ctx.externalAccountId)) throw new ConnectorError("invalid_request", "ga4: property id must be numeric");
     const f = this.cfg.fetch ?? fetch;
     const accessToken = await refreshAccessToken(this.cfg, ctx.credentials.refreshToken);
+    // One request for the whole table: the base fields plus every group the user switched on.
+    const fields = ga4Fields(ctx.options?.ga4Reports);
     let apiCalls = 1;
     const records: ProviderDailyRecord[] = [];
     const notes: string[] = [];
@@ -54,8 +55,8 @@ export class Ga4Connector implements Connector {
         { authorization: `Bearer ${accessToken}` },
         {
           dateRanges: [{ startDate: ctx.window.from, endDate: ctx.window.to }],
-          dimensions: GA4_DIMENSIONS.map((name) => ({ name })),
-          metrics: GA4_METRICS.map((name) => ({ name })),
+          dimensions: fields.dimensions.map((name) => ({ name })),
+          metrics: fields.metrics.map((name) => ({ name })),
           limit: PAGE_SIZE,
           offset,
           keepEmptyRows: false,
@@ -68,33 +69,43 @@ export class Ga4Connector implements Connector {
       total = body.rowCount ?? 0;
       const tz = body.metadata?.timeZone ?? ctx.companyTimezone;
       if (body.metadata?.dataLossFromOtherRow) {
-        notes.push("GA4 grouped some low-volume rows into '(other)'; campaign detail is partial for some days.");
+        notes.push("GA4 grouped some low-volume rows into '(other)'; detail is partial for some days.");
       }
       for (const row of body.rows ?? []) {
-        const [date, campaignId, campaignName] = row.dimensionValues.map((d) => d.value);
-        const [sessions, keyEvents, revenue] = row.metricValues.map((m) => Number(m.value));
+        // Stored row: every requested field by name (the table shows exactly these columns).
+        const values: Record<string, string> = {};
+        fields.dimensions.forEach((d, i) => (values[d] = row.dimensionValues[i]?.value ?? ""));
+        fields.metrics.forEach((m, i) => (values[m] = row.metricValues[i]?.value ?? ""));
+        const num = (k: string) => {
+          const n = Number(values[k]);
+          return values[k] !== undefined && values[k] !== "" && Number.isFinite(n) ? n : null;
+        };
+        const campaignId = values.sessionCampaignId ?? "";
+        const campaignName = values.sessionCampaignName ?? "";
         records.push({
-          date: ga4Date(date!),
+          date: ga4Date(values.date ?? ""),
           account_id: ctx.externalAccountId,
           account_name: null,
           // Traffic without a campaign comes back as "(not set)" with the channel as the name
           // ("(organic)", "(direct)"…): keep those apart instead of merging them under one id.
-          campaign_id: campaignId && campaignId !== "(not set)" ? campaignId : `(not set) ${campaignName ?? ""}`.trim(),
+          campaign_id: campaignId && campaignId !== "(not set)" ? campaignId : `(not set) ${campaignName}`.trim(),
           campaign_name: campaignName || null,
           currency: body.metadata?.currencyCode ?? null,
           timezone: tz,
+          // Dashboard numbers: rows of one campaign (split by the extra breakdowns) are summed back.
           metrics: {
             impressions: null,
             clicks: null,
             spend: null,
-            sessions: Number.isFinite(sessions) ? sessions! : null,
-            conversions: Number.isFinite(keyEvents) ? keyEvents! : null,
+            sessions: num("sessions"),
+            conversions: num("keyEvents"),
             conversion_type: "ga4_key_event",
             leads: null,
-            attributed_revenue: Number.isFinite(revenue) ? revenue! : null,
+            attributed_revenue: num("totalRevenue"),
             billed_revenue: null,
           },
-          raw: { dimensions: row.dimensionValues, metrics: row.metricValues },
+          raw: values,
+          rawKey: fields.dimensions.map((d) => values[d]).join("\u001f"),
         });
       }
       const got = body.rows?.length ?? 0;
@@ -107,69 +118,6 @@ export class Ga4Connector implements Connector {
       }
     }
     if (records.length < total && Number.isFinite(total)) complete = false;
-
-    // Extra reports the user switched on. Each one is independent: a failure (e.g. Google Ads
-    // not linked, quota) is reported and skipped, so the dashboard data still arrives.
-    const extraRaw: ExtraRawRecord[] = [];
-    const extraErrors: { report: string; message: string }[] = [];
-    const extraFetched: string[] = [];
-    for (const id of sanitizeGa4Reports(ctx.options?.ga4Reports)) {
-      const report = ga4ReportById(id)!;
-      try {
-        const out = await this.runExtraReport(f, accessToken, ctx, report.id, report.dimensions.map((d) => d.name), report.metrics.map((m) => m.name));
-        apiCalls += out.calls;
-        if (out.complete) extraFetched.push(report.id);
-        else extraErrors.push({ report: report.id, message: "row limit reached; the report may be incomplete" });
-        extraRaw.push(...out.rows);
-      } catch (err) {
-        if (err instanceof ConnectorError && err.code === "auth_expired") throw err;
-        extraErrors.push({ report: report.id, message: (err as Error).message.slice(0, 300) });
-      }
-    }
-    return { records, apiCalls, complete, notes, extraRaw, extraErrors, extraFetched };
-  }
-
-  private async runExtraReport(
-    f: FetchLike,
-    accessToken: string,
-    ctx: FetchContext,
-    id: string,
-    dimensions: string[],
-    metrics: string[],
-  ): Promise<{ rows: ExtraRawRecord[]; calls: number; complete: boolean }> {
-    const rows: ExtraRawRecord[] = [];
-    let offset = 0;
-    let total = Infinity;
-    let calls = 0;
-    while (offset < total) {
-      const { json, calls: c } = await postJson(
-        f,
-        `https://analyticsdata.googleapis.com/v1beta/properties/${ctx.externalAccountId}:runReport`,
-        { authorization: `Bearer ${accessToken}` },
-        {
-          dateRanges: [{ startDate: ctx.window.from, endDate: ctx.window.to }],
-          dimensions: dimensions.map((name) => ({ name })),
-          metrics: metrics.map((name) => ({ name })),
-          limit: PAGE_SIZE,
-          offset,
-          keepEmptyRows: false,
-        },
-        "ga4",
-      );
-      calls += c;
-      const body = json as Ga4Response;
-      total = body.rowCount ?? 0;
-      for (const row of body.rows ?? []) {
-        const payload: Record<string, string> = {};
-        dimensions.forEach((d, i) => (payload[d] = row.dimensionValues[i]?.value ?? ""));
-        metrics.forEach((m, i) => (payload[m] = row.metricValues[i]?.value ?? ""));
-        rows.push({ source: `ga4:${id}`, date: ga4Date(payload.date!), key: dimensions.slice(1).map((d) => payload[d]).join("\u001f"), payload });
-      }
-      const got = body.rows?.length ?? 0;
-      if (got === 0) break;
-      offset += got;
-      if (calls > 20) return { rows, calls, complete: false };
-    }
-    return { rows, calls, complete: rows.length >= total || !Number.isFinite(total) };
+    return { records, apiCalls, complete, notes };
   }
 }

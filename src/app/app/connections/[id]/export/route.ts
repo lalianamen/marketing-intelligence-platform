@@ -4,7 +4,6 @@ import { getPool } from "@/server/db";
 import { loadConfig } from "@/server/config";
 import { getWarehouse } from "@/server/warehouse";
 import { loadConnection, loadRawPage } from "@/server/connections/manage";
-import { sanitizeGa4Reports } from "@/lib/ga4Catalog";
 import { addDays, localDate } from "@/lib/dates";
 import { csvCell, parseRawTableParams, valueAt } from "@/lib/rawTable";
 
@@ -27,8 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const yesterday = addDays(localDate(new Date(), tz), -1);
   const p = parseRawTableParams(sp, yesterday);
   const full = sp.full === "1";
-  const report = conn.provider_id === "ga4" && conn.mode === "live" && sp.report && sanitizeGa4Reports(conn.settings?.ga4_reports).includes(sp.report) ? sp.report : "core";
-  const source = conn.provider_id === "ga4" && conn.mode === "live" ? (report === "core" ? "ga4" : `ga4:${report}`) : undefined;
+  const source = conn.provider_id === "ga4" ? "ga4" : undefined;
   const cfg = loadConfig();
   const page = await loadRawPage(db, (prov) => getWarehouse(prov, cfg), user.id, id, p, { source, limit: EXPORT_LIMIT, offset: 0, ignoreFilters: full });
   const header = ["day", ...page.columns.map((c) => c.label), "imported_at_utc"];
@@ -44,7 +42,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     lines.push([r.record_date, ...cells, r.ingested_at].map((x) => csvCell(String(x))).join(","));
   }
   const period = full ? "all" : `${p.from ?? "start"}_${p.to ?? "end"}`;
-  const name = `${conn.provider_id}-${report}-${period}.csv`.replace(/[^\w.-]/g, "_");
+  const name = `${conn.provider_id}-${period}.csv`.replace(/[^\w.-]/g, "_");
   const body = "﻿" + lines.join("\r\n") + "\r\n";
   return new NextResponse(body, {
     headers: {

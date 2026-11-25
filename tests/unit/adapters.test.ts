@@ -54,24 +54,23 @@ describe("GA4 connector (mocked HTTP)", () => {
     ]);
   });
 
-  it("runs extra reports the user switched on; a failing one is reported, not fatal", async () => {
-    const core = json(200, { rowCount: 1, metadata: {}, rows: [{ dimensionValues: [{ value: "20261101" }, { value: "7" }, { value: "Spring" }], metricValues: [{ value: "10" }, { value: "1" }, { value: "0" }] }] });
-    const traffic = json(200, {
-      rowCount: 1,
-      rows: [{ dimensionValues: [{ value: "20261101" }, { value: "google" }, { value: "organic" }, { value: "Organic Search" }], metricValues: ["9", "6", "8", "5", "1", "0"].map((value) => ({ value })) }],
+  it("one request with the base fields plus every chosen group; rows of a campaign stay apart in raw, sum for the dashboard", async () => {
+    const row = (campaign: string, source: string, sessions: string) => ({
+      dimensionValues: ["20261101", "(not set)", campaign, source, "organic", "Organic Search"].map((value) => ({ value })),
+      metricValues: [sessions, "1", "0"].map((value) => ({ value })),
     });
-    const adsFails = json(400, { error: { message: "advertiserAdCost requires a Google Ads link" } });
-    const f = vi.fn().mockResolvedValueOnce(tokenOk.clone()).mockResolvedValueOnce(core).mockResolvedValueOnce(traffic).mockResolvedValueOnce(adsFails);
+    const f = vi.fn().mockResolvedValueOnce(tokenOk.clone()).mockResolvedValueOnce(json(200, { rowCount: 2, metadata: {}, rows: [row("(organic)", "google", "17"), row("(organic)", "bing", "1")] }));
     const c = new Ga4Connector({ clientId: "id", clientSecret: "s", fetch: f });
-    const out = await c.fetchDaily({ ...ctx, externalAccountId: "123456", options: { ga4Reports: ["google_ads", "traffic_sources", "bogus"] } });
-    expect(out.records).toHaveLength(1);
-    expect(out.extraFetched).toEqual(["traffic_sources"]);
-    expect(out.extraRaw).toEqual([
-      expect.objectContaining({ source: "ga4:traffic_sources", date: "2026-11-01", payload: expect.objectContaining({ sessionSource: "google", sessionMedium: "organic", sessions: "9", totalRevenue: "0" }) }),
+    const out = await c.fetchDaily({ ...ctx, externalAccountId: "123456", options: { ga4Reports: ["traffic_sources", "bogus"] } });
+    const body = JSON.parse((f.mock.calls[1]![1] as RequestInit).body as string);
+    expect(body.dimensions.map((d: { name: string }) => d.name)).toEqual(["date", "sessionCampaignId", "sessionCampaignName", "sessionSource", "sessionMedium", "sessionDefaultChannelGroup"]);
+    expect(body.metrics.map((m: { name: string }) => m.name)).toEqual(["sessions", "keyEvents", "totalRevenue"]);
+    expect(out.records.map((r) => r.raw)).toEqual([
+      expect.objectContaining({ sessionCampaignName: "(organic)", sessionSource: "google", sessions: "17" }),
+      expect.objectContaining({ sessionCampaignName: "(organic)", sessionSource: "bing", sessions: "1" }),
     ]);
-    expect(out.extraErrors).toEqual([expect.objectContaining({ report: "google_ads" })]);
-    const trafficBody = JSON.parse((f.mock.calls[2]![1] as RequestInit).body as string);
-    expect(trafficBody.dimensions.map((d: { name: string }) => d.name)).toEqual(["date", "sessionSource", "sessionMedium", "sessionDefaultChannelGroup"]);
+    expect(new Set(out.records.map((r) => r.rawKey)).size).toBe(2);
+    expect(new Set(out.records.map((r) => r.campaign_id))).toEqual(new Set(["(not set) (organic)"]));
   });
 
   it("expired refresh token → auth_expired (not retryable)", async () => {

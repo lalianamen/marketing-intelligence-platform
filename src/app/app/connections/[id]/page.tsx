@@ -17,7 +17,7 @@ import { parseRawTableParams, rawTableQuery, valueAt } from "@/lib/rawTable";
 import { RawFilterRow } from "@/components/RawFilterRow";
 import { ScrollX } from "@/components/ScrollX";
 import { Expandable } from "@/components/Expandable";
-import { GA4_REPORTS, ga4ReportById, sanitizeGa4Reports } from "@/lib/ga4Catalog";
+import { GA4_GROUPS, GA4_MAX_DIMENSIONS, GA4_MAX_METRICS, ga4Fields, ga4SelectionProblem, sanitizeGa4Groups } from "@/lib/ga4Catalog";
 import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, startLoadingAction, syncNowAction, toggleGa4ReportAction, updateScheduleAction } from "../../actions";
 import { addDays, localDate } from "@/lib/dates";
 
@@ -35,9 +35,10 @@ export default async function ConnectionPage({ params, searchParams }: { params:
   const cfg = loadConfig();
   const isGa4Live = c.provider_id === "ga4" && c.mode === "live";
   const inSetup = c.mode !== "manual" && !c.activated_at;
-  const enabledReports = isGa4Live ? sanitizeGa4Reports(c.settings?.ga4_reports) : [];
-  const shownReport = isGa4Live && sp.report && enabledReports.includes(sp.report) ? sp.report : "core";
-  const rawSource = isGa4Live ? (shownReport === "core" ? "ga4" : `ga4:${shownReport}`) : undefined;
+  const enabledReports = isGa4Live ? sanitizeGa4Groups(c.settings?.ga4_reports) : [];
+  const fieldsNow = ga4Fields(enabledReports);
+  // GA4 rows of the one table have source "ga4" (rows of the former separate reports are not shown).
+  const rawSource = c.provider_id === "ga4" ? "ga4" : undefined;
   const tableYesterday = addDays(localDate(new Date(), tz), -1);
   const tp = parseRawTableParams(sp, tableYesterday);
   const [runs, raw] = await Promise.all([
@@ -54,9 +55,9 @@ export default async function ConnectionPage({ params, searchParams }: { params:
     }
     return { r, payload };
   });
-  const baseQ: Record<string, string> = isGa4Live && shownReport !== "core" ? { report: shownReport } : {};
+  const baseQ: Record<string, string> = {};
   const href = (change: Parameters<typeof rawTableQuery>[2]) => `/app/connections/${c.id}?${rawTableQuery(baseQ, tp, { page: 1, ...change })}#raw`;
-  const exportHref = (full: boolean) => `/app/connections/${c.id}/export?${rawTableQuery({ ...baseQ, ...(isGa4Live ? { report: shownReport } : {}), ...(full ? { full: "1" } : {}) }, tp, { page: 1 })}`;
+  const exportHref = (full: boolean) => `/app/connections/${c.id}/export?${rawTableQuery({ ...baseQ, ...(full ? { full: "1" } : {}) }, tp, { page: 1 })}`;
   const pages = Math.max(1, Math.ceil(raw.total / PAGE_SIZE));
   const sortLink = (key: string) => href({ sort: key, dir: tp.sort === key && tp.dir === "desc" ? "asc" : "desc" });
   const sortMark = (key: string) => (tp.sort === key ? (tp.dir === "desc" ? " ↓" : " ↑") : "");
@@ -119,7 +120,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
       </div>
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.queued && <Notice tone="green">Update requested.</Notice>}
-      {sp.restarted && <Notice tone="green">The tables were deleted and loading started again with the new set of data: {sp.rfrom} → {sp.rto}, {sp.restarted} part{sp.restarted === "1" ? "" : "s"}.</Notice>}
+      {sp.restarted && <Notice tone="green">All data of this connector was deleted and loading started again with the new columns for the last 30 days ({sp.rfrom} → {sp.rto}).</Notice>}
       {sp.started && <Notice tone="green">Loading started in {sp.started} part{sp.started === "1" ? "" : "s"} of up to one month. Automatic updates are on as chosen.</Notice>}
 
       {inSetup && (
@@ -129,11 +130,11 @@ export default async function ConnectionPage({ params, searchParams }: { params:
             <p className="text-sm text-gray-600">Nothing has been loaded yet. Choose what to collect, for which period and how often, then press Start loading.</p>
           </div>
           <Notice tone="amber">
-            Switch on all the data you need <strong>now</strong>, before the first load. If you change the data later, the whole
-            current table of this connector is deleted and loaded again from scratch — and a new load takes time.
+            Switch on all the data you need <strong>now</strong>, before the first load. If you change the data later, all data of
+            this connector is deleted and only the last 30 days are loaded again — and a new load takes time.
           </Notice>
           <ol className="space-y-1 text-sm text-gray-700">
-            <li><strong>1. What to collect</strong> — {isGa4Live ? "switch reports on in the list below (the dashboard report is always included)." : "this source has one standard report."}</li>
+            <li><strong>1. What to collect</strong> — {isGa4Live ? "switch groups on in the list below; their columns are added to the one table (the dashboard columns are always included)." : "this source has one standard table."}</li>
             <li><strong>2. Period</strong> and <strong>3. Schedule</strong> — in the form below.</li>
           </ol>
         </section>
@@ -141,19 +142,19 @@ export default async function ConnectionPage({ params, searchParams }: { params:
 
       {isGa4Live && (
         <details id="ga4-reports" className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog" open={inSetup || Boolean(sp.enabled || sp.disabled || sp.report)}>
-          <summary className="cursor-pointer text-base font-semibold">What else GA4 can provide <span className="ml-2 text-sm font-normal text-gray-500">{enabledReports.length} extra report{enabledReports.length === 1 ? "" : "s"} on</span></summary>
+          <summary className="cursor-pointer text-base font-semibold">Data in the table <span className="ml-2 text-sm font-normal text-gray-500">{fieldsNow.dimensions.length} of {GA4_MAX_DIMENSIONS} breakdowns · {fieldsNow.metrics.length} of {GA4_MAX_METRICS} numbers</span></summary>
           <p className="mt-2 text-xs text-gray-500">
             {inSetup
-              ? "Switch on everything you want to collect before the first load. Dashboard totals always come from the first report."
-              : "Changing this list deletes the connector's current tables and loads the same period again with the new set of data. Dashboard totals always come from the first report."}
+              ? "Switch on everything you want in the table before the first load. Each group adds its columns to the same table."
+              : "Each group adds its columns to the one table. Changing this list deletes all data of this connector and loads the last 30 days again."}
+            {" "}GA4 allows at most {GA4_MAX_DIMENSIONS} breakdowns and {GA4_MAX_METRICS} numbers in one table.
           </p>
-          {sp.enabled && <div className="mt-3"><Notice tone="green">Report switched on. The last 30 days are loading — they appear in Raw data in a minute.</Notice></div>}
-          {sp.disabled && <div className="mt-3"><Notice tone="blue">Report switched off and its data deleted.</Notice></div>}
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {GA4_REPORTS.map((g) => {
-              const on = g.core || enabledReports.includes(g.id);
+            {GA4_GROUPS.map((g) => {
+              const on = Boolean(g.core) || enabledReports.includes(g.id);
+              const blocked = !on ? ga4SelectionProblem([...enabledReports, g.id]) : null;
               return (
-                <section key={g.id} className={`rounded-lg border p-3 ${on && !g.unavailable ? "border-green-200 bg-green-50/40" : "border-gray-100"}`} data-testid={`ga4-report-${g.id}`}>
+                <section key={g.id} className={`rounded-lg border p-3 ${on ? "border-green-200 bg-green-50/40" : "border-gray-100"}`} data-testid={`ga4-report-${g.id}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-sm font-semibold text-gray-900">{g.title}</h3>
@@ -161,8 +162,8 @@ export default async function ConnectionPage({ params, searchParams }: { params:
                     </div>
                     {g.core ? (
                       <Badge tone="green">always on</Badge>
-                    ) : g.unavailable ? (
-                      <Badge tone="gray">not via API</Badge>
+                    ) : blocked ? (
+                      <Badge tone="gray" title={blocked}>limit reached</Badge>
                     ) : canManage && !inSetup ? (
                       <ConfirmButton
                         action={toggleGa4ReportAction}
@@ -171,11 +172,11 @@ export default async function ConnectionPage({ params, searchParams }: { params:
                         triggerLabel={`${on ? "Turn off" : "Turn on"} ${g.title}`}
                         triggerClassName={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-green-600" : "bg-gray-300"}`}
                         trigger={<span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${on ? "translate-x-5" : "translate-x-0.5"}`} />}
-                        title={`${on ? "Turn off" : "Turn on"} “${g.title}” and reload?`}
+                        title={`${on ? "Remove" : "Add"} “${g.title}” and reload?`}
                         lines={[
-                          "The whole current table of this connector will be deleted — dashboard data and every report.",
-                          "A new load then starts from scratch with the new set of data, for the same period that is loaded now.",
-                          "Loading takes time: it runs in parts of up to one month, from a few minutes up to a few hours for a long period. Until it finishes, the dashboard shows only the days loaded so far.",
+                          "All data of this connector will be deleted — from the database and from the table, including the dashboard numbers.",
+                          `A new load then starts from scratch with the new set of columns, for the last 30 days only.`,
+                          "Loading takes time. Until it finishes, the table and the dashboard show only the days loaded so far. Older days can be added afterwards with Load history.",
                         ]}
                         confirmLabel="Delete tables and reload"
                         pendingLabel="Restarting…"
@@ -199,6 +200,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
                     )}
                   </div>
                   {g.note && <p className="mt-1 text-xs text-amber-800">{g.note}</p>}
+                  {blocked && <p className="mt-1 text-xs text-gray-500">{blocked}</p>}
                   {g.dimensions.length + g.metrics.length > 0 && (
                     <ul className="mt-2 space-y-1 text-xs">
                       {[...g.dimensions, ...g.metrics].map((f) => (
@@ -338,20 +340,6 @@ export default async function ConnectionPage({ params, searchParams }: { params:
 
       {!inSetup && (
       <Card title="Raw data">
-        {isGa4Live && enabledReports.length > 0 && (
-          <nav aria-label="Report" className="mb-3 flex flex-wrap gap-1" data-testid="raw-report-tabs">
-            {["core", ...enabledReports].map((id) => (
-              <a
-                key={id}
-                href={`/app/connections/${c.id}?report=${id}#raw`}
-                aria-current={id === shownReport ? "page" : undefined}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium ring-1 ${id === shownReport ? "bg-brand-50 text-brand-700 ring-brand-200" : "text-gray-700 ring-gray-200 hover:bg-gray-50"}`}
-              >
-                {ga4ReportById(id)?.title ?? id}
-              </a>
-            ))}
-          </nav>
-        )}
         <p id="raw" className="mb-3 text-xs text-gray-500">
           Exactly what {name} returned, before any calculation. One row per day and value; repeated updates replace rows, never duplicate them.
         </p>
@@ -374,7 +362,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
               key={`${n}-${sp[`f${n}c`] ?? ""}`}
               n={n}
               columns={cols.map((col) => col.label)}
-              valuesUrl={`/app/connections/${c.id}/values${isGa4Live ? `?report=${shownReport}` : ""}`}
+              valuesUrl={`/app/connections/${c.id}/values`}
               initial={{ col: sp[`f${n}c`] ?? "", op: sp[`f${n}o`] ?? "eq", value: sp[`f${n}v`] ?? "" }}
               initialValues={raw.suggestions[sp[`f${n}c`] ?? ""] ?? []}
             />

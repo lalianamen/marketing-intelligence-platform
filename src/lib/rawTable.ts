@@ -1,7 +1,7 @@
 // Raw data table on the connector page: columns (label → JSON path in the stored
 // payload), and the URL parameters for period, filters, sorting and paging.
 
-import { GA4_REPORTS } from "./ga4Catalog";
+import { GA4_CORE, ga4Fields } from "./ga4Catalog";
 import { addDays } from "./dates";
 import { flattenRawPayload } from "./rawView";
 
@@ -18,18 +18,22 @@ export const FILTER_OPS: { op: FilterOp; label: string }[] = [
   { op: "lt", label: "<" },
 ];
 
-/** Columns of a report. GA4 core rows store values by position; other reports store named fields. */
-export function rawColumnsFor(origin: string, source: string | undefined, samplePayloads: string[]): RawColumn[] {
-  if (origin === "ga4" && (!source || source === "ga4")) {
-    const core = GA4_REPORTS.find((r) => r.core)!;
-    return [
-      ...core.dimensions.map((d, i) => ({ label: d.name, path: ["dimensions", String(i), "value"] })),
-      ...core.metrics.map((m, i) => ({ label: m.name, path: ["metrics", String(i), "value"] })),
-    ].filter((c) => c.label !== "date"); // GA4's raw YYYYMMDD duplicates the Day column
-  }
-  if (origin === "ga4" && source?.startsWith("ga4:")) {
-    const report = GA4_REPORTS.find((r) => r.id === source.slice(4));
-    if (report) return [...report.dimensions, ...report.metrics].filter((f) => f.name !== "date").map((f) => ({ label: f.name, path: [f.name] }));
+/**
+ * Columns of a connector's table. GA4 rows store every requested field by name
+ * (rows loaded before the one-table change stored the base fields by position).
+ * GA4's raw date (YYYYMMDD) is not shown: the Day column already has it.
+ */
+export function rawColumnsFor(origin: string, samplePayloads: string[], ga4Groups: unknown = []): RawColumn[] {
+  if (origin === "ga4") {
+    const legacy = samplePayloads.some((p) => /^\s*\{\s*"dimensions"\s*:\s*\[/.test(p));
+    if (legacy) {
+      return [
+        ...GA4_CORE.dimensions.map((d, i) => ({ label: d.name, path: ["dimensions", String(i), "value"] })),
+        ...GA4_CORE.metrics.map((m, i) => ({ label: m.name, path: ["metrics", String(i), "value"] })),
+      ].filter((c) => c.label !== "date");
+    }
+    const f = ga4Fields(ga4Groups);
+    return [...f.dimensions, ...f.metrics].filter((n) => n !== "date").map((n) => ({ label: n, path: [n] }));
   }
   const labels: string[] = [];
   for (const p of samplePayloads) for (const k of Object.keys(flattenRawPayload(origin, p))) if (!labels.includes(k) && labels.length < 30) labels.push(k);

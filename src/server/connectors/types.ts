@@ -29,6 +29,8 @@ export interface ProviderDailyRecord {
   metrics: DailyMetrics;
   /** Source-faithful payload stored in the RAW layer. */
   raw: Record<string, unknown>;
+  /** Distinguishes raw rows that share a campaign/day (e.g. split by extra breakdowns). */
+  rawKey?: string;
 }
 
 export interface FetchContext {
@@ -40,19 +42,10 @@ export interface FetchContext {
   credentials?: { refreshToken: string };
   now: Date;
   signal?: AbortSignal;
-  /** Per-connection options, e.g. extra GA4 reports the user switched on. */
+  /** Per-connection options, e.g. the GA4 groups the user switched on. */
   options?: { ga4Reports?: string[] };
 }
 
-/** A row of an extra report: stored only in the RAW layer (never in dashboard totals). */
-export interface ExtraRawRecord {
-  /** e.g. "ga4:traffic_sources" */
-  source: string;
-  date: string;
-  /** Stable key of the row within its report and day (its dimension values). */
-  key: string;
-  payload: Record<string, string>;
-}
 
 export interface FetchResult {
   records: ProviderDailyRecord[];
@@ -60,11 +53,6 @@ export interface FetchResult {
   /** false when pagination/row limits mean the window may be incomplete. */
   complete: boolean;
   notes: string[];
-  /** Rows of extra reports (raw only). A failed extra report is reported in `extraErrors`, not thrown. */
-  extraRaw?: ExtraRawRecord[];
-  extraErrors?: { report: string; message: string }[];
-  /** Extra reports that were fetched completely (their window can be replaced). */
-  extraFetched?: string[];
 }
 
 export interface Connector {
