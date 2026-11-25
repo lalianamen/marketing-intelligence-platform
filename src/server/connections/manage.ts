@@ -155,8 +155,8 @@ export async function deleteConnection(
 
 export async function loadRuns(db: Queryable, connectionId: string, limit = 20) {
   return (
-    await db.query<{ id: string; trigger: string; status: string; window_start: string | null; window_end: string | null; rows_written: number; attempts: number; error_code: string | null; created_at: Date }>(
-      `select id, trigger, status, window_start::text, window_end::text, rows_written, attempts, error_code, created_at
+    await db.query<{ id: string; trigger: string; status: string; window_start: string | null; window_end: string | null; rows_written: number; attempts: number; error_code: string | null; created_at: Date; run_after: Date }>(
+      `select id, trigger, status, window_start::text, window_end::text, rows_written, attempts, error_code, created_at, run_after
          from public.sync_runs where connection_id = $1 order by created_at desc limit $2`,
       [connectionId, limit],
     )

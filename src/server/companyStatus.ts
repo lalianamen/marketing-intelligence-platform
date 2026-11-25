@@ -29,6 +29,7 @@ export interface SyncRunRow {
   is_simulated: boolean;
   created_at: string;
   finished_at: string | null;
+  run_after: string;
 }
 
 /** Plain-language data space status from the job + registry rows (RLS-scoped reads). */
@@ -62,7 +63,7 @@ export async function loadConnections(supabase: SupabaseClient, companyId: strin
       .order("created_at"),
     supabase
       .from("sync_runs")
-      .select("id,connection_id,provider_id,trigger,status,window_start,window_end,rows_written,attempts,error_code,error_message,is_simulated,created_at,finished_at")
+      .select("id,connection_id,provider_id,trigger,status,window_start,window_end,rows_written,attempts,error_code,error_message,is_simulated,created_at,finished_at,run_after")
       .eq("company_id", companyId)
       .order("created_at", { ascending: false })
       .limit(15),

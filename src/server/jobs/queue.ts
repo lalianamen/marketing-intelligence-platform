@@ -20,6 +20,9 @@ export interface ClaimedJob {
   [k: string]: unknown;
 }
 
+/** Fairness: one company never occupies more than this many workers at once. */
+export const MAX_RUNNING_PER_COMPANY = 2;
+
 export interface ClaimOptions {
   /** For sync_runs: max concurrently running runs per provider (rate limiting). */
   maxRunningPerProvider?: number;
@@ -35,7 +38,8 @@ export async function claimJob(
   const extra =
     table === "sync_runs"
       ? `and not exists (select 1 from public.sync_runs r2 where r2.connection_id = j.connection_id and r2.status = 'running')
-         and (select count(*) from public.sync_runs r3 where r3.provider_id = j.provider_id and r3.status = 'running') < $3`
+         and (select count(*) from public.sync_runs r3 where r3.provider_id = j.provider_id and r3.status = 'running') < $3
+         and (select count(*) from public.sync_runs r4 where r4.company_id = j.company_id and r4.status = 'running') < ${MAX_RUNNING_PER_COMPANY}`
       : "and $3::int is not null";
   const res = await db.query<ClaimedJob>(
     `update public.${table} t
@@ -45,7 +49,7 @@ export async function claimJob(
       where t.id = (
         select j.id from public.${table} j
          where j.status = 'queued' and j.run_after <= now() ${extra}
-         order by j.run_after
+         order by ${table === "sync_runs" ? "j.priority, " : ""}j.run_after
          for update skip locked
          limit 1)
      returning t.*`,
@@ -169,4 +173,20 @@ export async function heartbeat(db: Queryable, table: JobTable, jobId: string, w
 function assertColumn(c: string): string {
   if (!/^[a-z_]{1,40}$/.test(c)) throw new Error("bad column");
   return c;
+}
+
+/**
+ * Place in the line for queued sync runs (1 = next), counting only work that is
+ * ahead by the router's order (priority, then run_after). Reveals counts only.
+ */
+export async function queuePositions(db: Queryable, runIds: string[]): Promise<Map<string, number>> {
+  if (runIds.length === 0) return new Map();
+  const r = await db.query<{ id: string; ahead: number }>(
+    `select q.id, (select count(*)::int from public.sync_runs o
+                     where o.status = 'queued' and o.id <> q.id
+                       and (o.priority, o.run_after) < (q.priority, q.run_after)) as ahead
+       from public.sync_runs q where q.id = any($1::uuid[]) and q.status = 'queued'`,
+    [runIds],
+  );
+  return new Map(r.rows.map((x) => [x.id, x.ahead + 1]));
 }

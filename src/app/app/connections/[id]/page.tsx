@@ -6,6 +6,8 @@ import { getWarehouse } from "@/server/warehouse";
 import { loadConnection, loadRawRows, loadRuns } from "@/server/connections/manage";
 import { modeBadge, PROVIDER_LABEL } from "@/server/companyStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { LoadStatus } from "@/components/LoadStatus";
+import { queuePositions } from "@/server/jobs/queue";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
@@ -38,6 +40,8 @@ export default async function ConnectionPage({ params, searchParams }: { params:
   const name = PROVIDER_LABEL[c.provider_id] ?? c.provider_id;
   const canManage = c.access === "manage";
   const busy = runs.some((r) => r.status === "queued" || r.status === "running");
+  const current = runs.find((r) => r.status !== "cancelled");
+  const position = current?.status === "queued" ? (await queuePositions(db, [current.id])).get(current.id) : undefined;
   const yesterday = addDays(localDate(new Date(), tz), -1);
   const historyRunning = runs.some((r) => r.trigger === "backfill" && (r.status === "queued" || r.status === "running"));
 
@@ -47,7 +51,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <a href="/app/connections" className="text-sm text-brand-700 hover:underline">← Data Connections</a>
-          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold">{name} <Badge tone={b.tone}>{b.text}</Badge></h1>
+          <h1 className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-semibold">{name} <Badge tone={b.tone}>{b.text}</Badge> <LoadStatus run={current} position={position} tz={tz} /></h1>
           {c.external_account_name && <p className="text-sm text-gray-600">{c.external_account_name}</p>}
         </div>
         {canManage && (

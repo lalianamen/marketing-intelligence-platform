@@ -82,7 +82,7 @@ export async function runProvisioningOnce(deps: WorkerDeps): Promise<"idle" | "s
 
 export async function runSyncOnce(deps: WorkerDeps): Promise<"idle" | "succeeded" | "failed"> {
   const log = deps.log ?? jsonLog;
-  const run = await claimJob(deps.pool, "sync_runs", deps.workerId, deps.leaseSeconds ?? 600, { maxRunningPerProvider: 4 });
+  const run = await claimJob(deps.pool, "sync_runs", deps.workerId, deps.leaseSeconds ?? 600, { maxRunningPerProvider: 8 });
   if (!run) return "idle";
   log({ level: "info", msg: "sync.start", sync_run_id: run.id, company_id: run.company_id, provider: run.provider_id, attempt: run.attempts });
   try {

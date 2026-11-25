@@ -3,10 +3,12 @@ import { getUser } from "@/server/supabase/server";
 import { dataSpaceStatus, loadConnections, modeBadge, PROVIDER_LABEL, type SyncRunRow } from "@/server/companyStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { Badge, Button, Card, EmptyState, LinkButton, Notice } from "@/components/ui";
-import { fmtDateTime, fmtInt } from "@/lib/format";
+import { fmtDateTime } from "@/lib/format";
+import { LoadStatus } from "@/components/LoadStatus";
+import { getPool } from "@/server/db";
+import { queuePositions } from "@/server/jobs/queue";
 import { syncNowAction } from "../actions";
 
-const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
 
 export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; imported?: string; sample?: string; queued?: string; oauth?: string; connected?: string; deleted?: string }> }) {
   const sp = await searchParams;
@@ -17,7 +19,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
   const { connections, runs, issues } = await loadConnections(supabase, company.id);
   const running = runs.some((r) => r.status === "queued" || r.status === "running");
   const lastRun = new Map<string, SyncRunRow>();
-  for (const r of runs) if (!lastRun.has(r.connection_id)) lastRun.set(r.connection_id, r);
+  for (const r of runs) if (!lastRun.has(r.connection_id) && r.status !== "cancelled") lastRun.set(r.connection_id, r);
+  const positions = await queuePositions(getPool(), [...lastRun.values()].filter((r) => r.status === "queued").map((r) => r.id));
 
   return (
     <div className="space-y-6">
@@ -61,7 +64,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
                   <div className="flex justify-between gap-2"><dt className="text-gray-500">Status</dt><dd><Badge tone={c.status === "connected" ? "green" : c.status === "expired" || c.status === "error" ? "red" : "gray"}>{c.status === "expired" ? "Needs reconnecting" : c.status}</Badge></dd></div>
                   <div className="flex justify-between gap-2"><dt className="text-gray-500">Last update</dt><dd className="text-gray-900">{fmtDateTime(c.last_synced_at, company.timezone)}</dd></div>
                   <div className="flex justify-between gap-2"><dt className="text-gray-500">Data up to</dt><dd className="text-gray-900">{c.data_as_of ?? "—"}</dd></div>
-                  {r && <div className="flex justify-between gap-2"><dt className="text-gray-500">Last run</dt><dd><Badge tone={RUN_TONE[r.status] ?? "gray"}>{r.status}</Badge>{r.status === "succeeded" && <span className="ml-1 text-xs text-gray-500">{fmtInt(r.rows_written)} rows</span>}</dd></div>}
+                  <div className="flex justify-between gap-2"><dt className="text-gray-500">Loading</dt><dd><LoadStatus run={r} position={r ? positions.get(r.id) : undefined} tz={company.timezone} /></dd></div>
                 </dl>
                 {c.last_error && <p className="mt-2 text-xs text-red-700">{c.last_error}</p>}
                 <div className="mt-auto flex flex-wrap gap-2 pt-4">

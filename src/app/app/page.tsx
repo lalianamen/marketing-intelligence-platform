@@ -7,6 +7,9 @@ import { BarList, LineChart } from "@/components/Charts";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { Badge, EmptyState, LinkButton, Notice, SimulatedBanner } from "@/components/ui";
 import { fmtDateTime, fmtInt, fmtMoney } from "@/lib/format";
+import { LoadStatus } from "@/components/LoadStatus";
+import { getPool } from "@/server/db";
+import { queuePositions } from "@/server/jobs/queue";
 
 const PRESETS = [7, 28, 90];
 
@@ -20,9 +23,8 @@ function ago(iso: string | null): string {
   return `${Math.round(h / 24)} days ago`;
 }
 
-const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
 
-function ConnectorCard({ c, lastRun, tz }: { c: ConnectionRow; lastRun: SyncRunRow | undefined; tz: string }) {
+function ConnectorCard({ c, lastRun, tz, position }: { c: ConnectionRow; lastRun: SyncRunRow | undefined; tz: string; position?: number }) {
   const b = modeBadge(c.mode);
   return (
     <li className="relative rounded-xl border border-gray-200 bg-white p-4 transition hover:border-brand-300 hover:shadow-sm" data-testid="connector-card">
@@ -35,12 +37,10 @@ function ConnectorCard({ c, lastRun, tz }: { c: ConnectionRow; lastRun: SyncRunR
       <dl className="mt-3 space-y-1 text-sm">
         <div className="flex justify-between gap-2"><dt className="text-gray-500">Last update</dt><dd className="text-right font-medium text-gray-900" title={fmtDateTime(c.last_synced_at, tz)}>{ago(c.last_synced_at)}</dd></div>
         <div className="flex justify-between gap-2"><dt className="text-gray-500">Data up to</dt><dd className="text-right text-gray-900">{c.data_as_of ?? "—"}</dd></div>
-        {lastRun && (
-          <div className="flex justify-between gap-2">
-            <dt className="text-gray-500">Last run</dt>
-            <dd className="text-right"><Badge tone={RUN_TONE[lastRun.status] ?? "gray"}>{lastRun.status}</Badge>{lastRun.status === "succeeded" && <span className="ml-1 text-xs text-gray-500">{fmtInt(lastRun.rows_written)} rows</span>}</dd>
-          </div>
-        )}
+        <div className="flex justify-between gap-2">
+          <dt className="text-gray-500">Loading</dt>
+          <dd><LoadStatus run={lastRun} position={position} tz={tz} /></dd>
+        </div>
       </dl>
       {c.status !== "connected" && <p className="mt-2 text-xs text-red-700">{c.last_error ?? `Status: ${c.status}`}</p>}
     </li>
@@ -61,7 +61,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const hasData = (current?.rowCount ?? 0) > 0;
   const busy = space.status === "pending" || space.status === "preparing" || conns.runs.some((r) => r.status === "queued" || r.status === "running");
   const lastRunByConn = new Map<string, SyncRunRow>();
-  for (const r of conns.runs) if (!lastRunByConn.has(r.connection_id)) lastRunByConn.set(r.connection_id, r);
+  for (const r of conns.runs) if (!lastRunByConn.has(r.connection_id) && r.status !== "cancelled") lastRunByConn.set(r.connection_id, r);
+  const positions = await queuePositions(getPool(), [...lastRunByConn.values()].filter((r) => r.status === "queued").map((r) => r.id));
   const single = current && current.currencies.length === 1 ? current.currencies[0]! : null;
   const money = (m: Record<string, number>) => Object.values(m).reduce((a, b) => a + b, 0);
   const has = (k: "sessions" | "clicks" | "spend") => (current?.daily ?? []).some((d) => d[k] !== null && d[k] !== 0);
@@ -90,7 +91,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <a href="/app/connections" className="text-sm text-brand-700 hover:underline">Manage connections →</a>
         </div>
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {conns.connections.map((c) => <ConnectorCard key={c.id} c={c} lastRun={lastRunByConn.get(c.id)} tz={company.timezone} />)}
+          {conns.connections.map((c) => <ConnectorCard key={c.id} c={c} lastRun={lastRunByConn.get(c.id)} position={positions.get(lastRunByConn.get(c.id)?.id ?? "")} tz={company.timezone} />)}
           <li>
             <a href="/app/connections" className="flex h-full min-h-32 items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white p-4 text-sm font-medium text-brand-700 hover:border-brand-300 hover:bg-brand-50">
               + Connect a source or upload CSV

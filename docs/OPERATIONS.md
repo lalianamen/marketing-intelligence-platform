@@ -103,10 +103,16 @@ buffer (GA4 60 min, Ads 30 min) + 0–15 min deterministic jitter. At most 4 con
 ## Scheduler
 
 - Due daily syncs are enqueued by maintenance inside `/api/jobs/run`.
-- Hourly trigger, inside the platform: Supabase `pg_cron` runs `net.http_get(<app>/api/jobs/run)` at minute 7 with a
-  Bearer token. The token is generated inside Supabase Vault (`mip_scheduler_token`) and never shown; the app accepts it
-  by comparing its SHA-256 with `private.scheduler_tokens`. Set up once per environment with
-  `select private.configure_scheduler('https://<app host>');` (idempotent).
+- Router, inside the platform: Supabase `pg_cron` runs `private.wake_workers()` every minute. It counts waiting work
+  (due schedules, runnable queued runs and provisioning jobs, expired leases) and, only if there is any, calls
+  `<app>/api/jobs/run` about once per 10 waiting jobs (at most 5 at a time, minus workers already busy) with a Bearer
+  token that lives only in Supabase Vault (`mip_scheduler_token`); the app accepts it by its SHA-256 in
+  `private.scheduler_tokens`. Set up once per environment with `select private.configure_scheduler('https://<host>');`.
+- Priority (`sync_runs.priority`, set by trigger): Update now / CSV import 10, history parts for a switched-on GA4
+  report 40, scheduled 50, history load 90. Claim order: priority, then `run_after`.
+- Fairness: one company runs at most 2 imports at a time (`MAX_RUNNING_PER_COMPANY`); at most 8 per provider.
+- Users see the state of each connector: In queue (#position), Loading…, Load failed — retrying (reason, next try),
+  Load failed (reason), Up to date.
 - Vercel Cron (`vercel.json`, daily 16:00 UTC, Bearer `CRON_SECRET`) stays as a fallback.
 - One sync run fetches at most 31 days. The first connection loads the last 30 days. A long gap in automatic updates
   is caught up month by month (the next part is queued right after each one). Older history is requested on the
