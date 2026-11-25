@@ -15,6 +15,8 @@ import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
 import { fmtDateTime, fmtInt } from "@/lib/format";
 import { parseRawTableParams, rawTableQuery, valueAt } from "@/lib/rawTable";
 import { RawFilterRow } from "@/components/RawFilterRow";
+import { ScrollX } from "@/components/ScrollX";
+import { Expandable } from "@/components/Expandable";
 import { GA4_REPORTS, ga4ReportById, sanitizeGa4Reports } from "@/lib/ga4Catalog";
 import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, startLoadingAction, syncNowAction, toggleGa4ReportAction, updateScheduleAction } from "../../actions";
 import { addDays, localDate } from "@/lib/dates";
@@ -353,6 +355,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
         <p id="raw" className="mb-3 text-xs text-gray-500">
           Exactly what {name} returned, before any calculation. One row per day and value; repeated updates replace rows, never duplicate them.
         </p>
+        <Expandable title={`${name} — raw data`}>
         <form method="get" action={`/app/connections/${c.id}#raw`} className="mb-3 space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs" data-testid="raw-filters">
           {Object.entries(baseQ).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
           {tp.sort !== "day" && <input type="hidden" name="sort" value={tp.sort} />}
@@ -390,7 +393,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
         ) : (
           <>
             <p className="mb-2 text-xs text-gray-600" data-testid="raw-total">{raw.total.toLocaleString("en-US")} rows · page {tp.page} of {pages}{tp.from || tp.to ? ` · ${tp.from ?? "…"} → ${tp.to ?? "…"}` : " · all days"}</p>
-            <div className="max-h-[32rem] overflow-auto rounded-lg border border-gray-100">
+            <ScrollX className="raw-scroll max-h-[32rem] rounded-lg border border-gray-100">
               <table className="w-full text-left text-xs" data-testid="raw-table">
                 <thead className="sticky top-0 bg-gray-50 uppercase text-gray-500">
                   <tr>
@@ -409,7 +412,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollX>
             {pages > 1 && (
               <div className="mt-2 flex items-center gap-2 text-xs">
                 {tp.page > 1 && <a href={href({ page: tp.page - 1 })} className="rounded-md px-2 py-1 ring-1 ring-gray-300">← Previous</a>}
@@ -418,6 +421,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
             )}
           </>
         )}
+        </Expandable>
       </Card>
       )}
     </div>

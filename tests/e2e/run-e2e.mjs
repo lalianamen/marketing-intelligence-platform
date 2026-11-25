@@ -212,6 +212,23 @@ try {
   assert.match(csvText.split("\n")[0], /day,.*clicks.*imported_at_utc/);
   assert.equal(csvText.trim().split("\n").length - 1, parseInt(filtered.replace(/,/g, ""), 10), "export has the filtered rows");
   step("raw data: period, filters (value picked from a list), sort and CSV export of the view");
+  await page.setViewportSize({ width: 480, height: 900 });
+  await page.getByTestId("scroll-top").waitFor();
+  await page.getByTestId("scroll-top").evaluate((el) => { el.scrollLeft = 200; el.dispatchEvent(new Event("scroll")); });
+  await page.waitForFunction(() => (document.querySelector('[data-testid="raw-table"]')?.parentElement?.scrollLeft ?? 0) > 100);
+  await page.getByTestId("raw-table").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${OUT}/12-scroll.png` });
+  await page.setViewportSize({ width: 1360, height: 900 });
+  step("wide table: horizontal scrollbar above the table moves it");
+  await page.click('[data-testid="toggle-fullscreen"]');
+  await page.locator('[data-expanded="true"]').waitFor();
+  await page.click('[data-testid="raw-table"] th a:has-text("impressions")');
+  await page.waitForURL(/sort=impressions/);
+  await page.locator('[data-expanded="true"]').waitFor(); // stays full screen after a reload
+  await page.screenshot({ path: `${OUT}/13-fullscreen.png` });
+  await page.keyboard.press("Escape");
+  await page.locator('[data-expanded="false"]').waitFor();
+  step("raw data full screen: stays on while sorting, Esc leaves");
   await page.screenshot({ path: `${OUT}/10-connector.png`, fullPage: true });
   step("connector page: schedule saved, raw data table shown");
 
