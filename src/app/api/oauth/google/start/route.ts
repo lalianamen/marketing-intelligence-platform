@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
   const companyId = url.searchParams.get("company") ?? "";
   const account = (url.searchParams.get("account") ?? "").replace(/-/g, "").trim();
   if (provider !== "ga4" && provider !== "google_ads") return back("Unknown provider.");
-  if (provider === "ga4" ? !/^\d{1,20}$/.test(account) : !/^\d{10}$/.test(account)) return back("Please enter a valid account ID.");
+  // The ID is optional: without it, the callback lists the user's accounts.
+  if (account && (provider === "ga4" ? !/^\d{1,20}$/.test(account) : !/^\d{10}$/.test(account))) return back("Please enter a valid account ID.");
 
   const db = getPool();
   let workspaceId: string;
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
     response_type: "code",
     scope: provider === "ga4" ? GA4_SCOPE : GOOGLE_ADS_SCOPE,
     access_type: "offline",
-    prompt: "consent",
+    prompt: "consent select_account",
     include_granted_scopes: "false",
     state,
     code_challenge: challenge,

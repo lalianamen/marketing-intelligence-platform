@@ -45,15 +45,26 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
             </p>
             <div className="mt-4 space-y-2">
               {oauthReady ? (
-                <form action="/api/oauth/google/start" method="get">
-                  <input type="hidden" name="provider" value={p} />
-                  <input type="hidden" name="company" value={company.id} />
-                  <label className="mb-2 block text-xs text-gray-600">
-                    {p === "ga4" ? "GA4 property ID (Admin → Property details)" : "Google Ads customer ID (top right in Google Ads, 123-456-7890)"}
-                    <input name="account" required pattern={p === "ga4" ? "[0-9]{1,20}" : "[0-9]{3}-?[0-9]{3}-?[0-9]{4}"} className="mt-1 block w-full rounded border border-gray-300 px-2 py-1 text-sm" />
-                  </label>
-                  <Button disabled={space.status !== "ready"}>Connect with Google</Button>
-                </form>
+                <>
+                  <form action="/api/oauth/google/start" method="get">
+                    <input type="hidden" name="provider" value={p} />
+                    <input type="hidden" name="company" value={company.id} />
+                    <Button disabled={space.status !== "ready"}>Connect with Google</Button>
+                    <p className="mt-2 text-xs text-gray-500">Sign in with Google and we find your {p === "ga4" ? "Analytics properties" : "Google Ads accounts"} automatically.</p>
+                  </form>
+                  <details className="text-xs text-gray-500">
+                    <summary className="cursor-pointer">Enter the ID manually instead</summary>
+                    <form action="/api/oauth/google/start" method="get" className="mt-2 space-y-2">
+                      <input type="hidden" name="provider" value={p} />
+                      <input type="hidden" name="company" value={company.id} />
+                      <label className="block">
+                        {p === "ga4" ? "GA4 property ID (Admin → Property details)" : "Google Ads customer ID (123-456-7890)"}
+                        <input name="account" required pattern={p === "ga4" ? "[0-9]{1,20}" : "[0-9]{3}-?[0-9]{3}-?[0-9]{4}"} className="mt-1 block w-full rounded border border-gray-300 px-2 py-1 text-sm" />
+                      </label>
+                      <Button variant="secondary" disabled={space.status !== "ready"}>Connect this ID</Button>
+                    </form>
+                  </details>
+                </>
               ) : (
                 <p className="text-xs text-gray-500">
                   Live connection is not set up yet: an administrator must configure Google sign-in for this app first (see docs/CONNECTORS.md).

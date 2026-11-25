@@ -81,7 +81,7 @@ and time zone come from `customer.*`.
 
 ## Administrator prerequisites for live Google connectors
 
-1. Google Cloud project → enable *Google Analytics Data API* and *Google Ads API*.
+1. Google Cloud project → enable *Google Analytics Data API*, *Google Analytics Admin API* and *Google Ads API*.
 2. OAuth consent screen. While in **Testing** status: at most 100 test users, and refresh tokens expire after **7 days**
    (the app shows "Needs reconnecting"). For production: publishing and possibly Google verification of the scopes.
    Whether `analytics.readonly` / `adwords` count as sensitive scopes is **not verified**: check the Data Access page.
@@ -89,8 +89,15 @@ and time zone come from `customer.*`.
 4. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and `TOKEN_ENCRYPTION_KEY` in `.env.local` (never commit them).
 5. Google Ads: confirm the project's API access level and the user's account access.
 
-Not built yet: an account picker after consent (list accessible GA4 properties / Ads customers). Phase 1 asks the
-user to type the ID, and the first sync verifies access.
+**Account discovery (built).** The user only clicks "Connect with Google". After consent the callback lists what the
+Google user can read and connects it:
+- GA4: Google Analytics Admin API `v1beta/accountSummaries` (needs the *Google Analytics Admin API* enabled in the
+  app's Google Cloud project; scope `analytics.readonly`).
+- Google Ads: `customers:listAccessibleCustomers`, plus `customer.descriptive_name` per account (manager accounts are skipped).
+- One account → connected at once and the first import starts. Several → `/app/connections/choose`, where the user
+  ticks the ones that belong to the company. The refresh token waits encrypted in `oauth_pending_grants`
+  (server-only, 30 minutes) and each chosen account gets its own encrypted copy.
+- Typing the ID manually is still possible ("Enter the ID manually instead").
 
 ## Future connectors: design notes, no access promised
 

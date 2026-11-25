@@ -1,14 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/server/supabase/server";
 import { getPool, withTransaction } from "@/server/db";
+import { kickJobs } from "@/server/jobs/kick";
+import { createLiveConnection, defaultAccountName } from "@/server/oauth/connect";
+import type { ConnectorError } from "@/server/connectors/types";
 import { googleOAuthConfigured, loadConfig } from "@/server/config";
 import { getCompanyAccess } from "@/server/auth/authz";
-import { decryptSecret, encryptSecret, sha256Hex } from "@/server/crypto";
-import { exchangeCode, GA4_SCOPE, GOOGLE_ADS_SCOPE } from "@/server/connectors/google";
+import { decryptSecret, encryptSecret, redact, sha256Hex } from "@/server/crypto";
+import { type DiscoveredAccount, exchangeCode, GA4_SCOPE, GOOGLE_ADS_SCOPE, listAdsCustomers, listGa4Properties, refreshAccessToken } from "@/server/connectors/google";
 
 // OAuth callback: validates single-use state bound to the same signed-in user,
 // re-checks company authorization, exchanges the code (PKCE), stores ONLY the
-// encrypted refresh token, and creates a live connection + daily schedule.
+// encrypted refresh token, lists the user's GA4 properties / Ads accounts and
+// connects the only one, or lets the user choose when there are several.
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const back = (msg: string) => NextResponse.redirect(new URL(`/app/connections?oauth=${encodeURIComponent(msg)}`, loadConfig().appUrl));
@@ -35,7 +39,7 @@ export async function GET(request: NextRequest) {
   if (!st) return back("This connection attempt expired. Please try again.");
   if ((await getCompanyAccess(db, user.id, st.company_id)) !== "manage") return back("Not found, or you do not have access.");
 
-  let tokens: { refreshToken: string | null; scopes: string[] };
+  let tokens: { refreshToken: string | null; accessToken: string | null; scopes: string[] };
   try {
     tokens = await exchangeCode(
       { clientId: cfg.google.clientId!, clientSecret: cfg.google.clientSecret!, redirectUri: cfg.google.redirectUri },
@@ -46,37 +50,71 @@ export async function GET(request: NextRequest) {
     return back("Google did not accept the authorization. Please try again.");
   }
   const required = st.provider_id === "ga4" ? GA4_SCOPE : GOOGLE_ADS_SCOPE;
-  if (!tokens.scopes.includes(required)) return back("The required permission was not granted.");
+  if (!tokens.scopes.includes(required)) return back("The required permission was not granted. Please tick the box to allow access.");
   if (!tokens.refreshToken) return back("Google did not return a long-lived authorization. Remove the app's access in your Google account and try again.");
+  const refreshToken = tokens.refreshToken;
+  const label = st.provider_id === "ga4" ? "Google Analytics" : "Google Ads";
 
-  await withTransaction(async (c) => {
-    const conn = await c.query<{ id: string }>(
-      `insert into public.company_connections (workspace_id, company_id, provider_id, mode, status, external_account_id, external_account_name, scopes, created_by)
-       values ($1, $2, $3, 'live', 'connected', $4, $5, $6, $7)
-       on conflict (company_id, provider_id, mode, coalesce(external_account_id, ''))
-       do update set status = 'connected', scopes = excluded.scopes, last_error = null, consecutive_failures = 0, updated_at = now()
-       returning id`,
-      [st.workspace_id, st.company_id, st.provider_id, st.external_account_id, st.provider_id === "ga4" ? `GA4 property ${st.external_account_id}` : `Google Ads ${st.external_account_id}`, tokens.scopes, user.id],
+  // Which accounts can this Google user read? (Skipped when an ID was typed in.)
+  let accounts: DiscoveredAccount[];
+  if (st.external_account_id) {
+    accounts = [{ id: st.external_account_id, name: defaultAccountName(st.provider_id, st.external_account_id), group: null }];
+  } else {
+    try {
+      const accessToken = tokens.accessToken ?? (await refreshAccessToken({ clientId: cfg.google.clientId!, clientSecret: cfg.google.clientSecret! }, refreshToken));
+      accounts =
+        st.provider_id === "ga4"
+          ? await listGa4Properties(accessToken)
+          : await listAdsCustomers(accessToken, { apiVersion: cfg.google.adsApiVersion, developerToken: cfg.google.adsDeveloperToken });
+    } catch (err) {
+      const e = err as ConnectorError;
+      console.error(JSON.stringify({ level: "warn", msg: "oauth.discovery_failed", provider: st.provider_id, code: e.code, error: redact(e.message ?? "") }));
+      if (e.code === "not_configured") return back(`${label} account listing is not enabled for this app yet (administrator: enable the API in Google Cloud).`);
+      if (st.provider_id === "google_ads" && e.code === "permission_denied")
+        return back("Google Ads did not allow this app to read your accounts yet: the app's Google Ads API access is still limited to test accounts.");
+      return back(`Could not read your ${label} accounts from Google. Please try again.`);
+    }
+  }
+  if (accounts.length === 0) {
+    return back(st.provider_id === "ga4"
+      ? "This Google account has no Google Analytics 4 properties. Sign in with the Google account that has access to your GA4."
+      : "This Google account has no Google Ads accounts. Sign in with the Google account that has access to your Google Ads.");
+  }
+
+  if (accounts.length === 1) {
+    const connectionId = await withTransaction((c) =>
+      createLiveConnection(c, {
+        workspaceId: st.workspace_id,
+        companyId: st.company_id,
+        userId: user.id,
+        provider: st.provider_id,
+        account: accounts[0]!,
+        refreshToken,
+        scopes: tokens.scopes,
+        encryptionKey: cfg.tokenEncryptionKey!,
+      }),
     );
-    const id = conn.rows[0]!.id;
-    await c.query(
-      `insert into public.connection_secrets (connection_id, workspace_id, company_id, ciphertext)
-       values ($1, $2, $3, $4)
-       on conflict (connection_id) do update set ciphertext = excluded.ciphertext, updated_at = now()`,
-      [id, st.workspace_id, st.company_id, encryptSecret(tokens.refreshToken!, cfg.tokenEncryptionKey!, id)],
-    );
-    await c.query(
-      `insert into public.sync_schedules (workspace_id, company_id, connection_id, frequency, local_time, timezone, buffer_minutes, next_run_at)
-       select $1, $2, $3, 'daily', coalesce(s.sync_local_time, '06:00'), co.timezone, $4, now()
-         from public.companies co left join public.company_settings s on s.company_id = co.id where co.id = $2
-       on conflict (connection_id) do update set enabled = true, updated_at = now()`,
-      [st.workspace_id, st.company_id, id, st.provider_id === "ga4" ? 60 : 30],
-    );
-    await c.query(
-      `insert into public.audit_logs (workspace_id, company_id, actor_user_id, action, target_type, target_id, metadata)
-       values ($1, $2, $3, 'connection.live_connected', 'connection', $4, $5)`,
-      [st.workspace_id, st.company_id, user.id, id, JSON.stringify({ provider: st.provider_id })],
-    );
-  });
-  return NextResponse.redirect(new URL("/app/connections?queued=1", loadConfig().appUrl));
+    await startFirstSync(connectionId);
+    return NextResponse.redirect(new URL(`/app/connections?connected=${encodeURIComponent(accounts[0]!.name)}`, cfg.appUrl));
+  }
+
+  // Several accounts: keep the encrypted grant for 30 minutes and let the user choose.
+  const grant = await db.query<{ id: string }>(
+    `insert into public.oauth_pending_grants (user_id, workspace_id, company_id, provider_id, ciphertext, scopes, accounts)
+     values ($1, $2, $3, $4, 'pending', $5, $6) returning id`,
+    [user.id, st.workspace_id, st.company_id, st.provider_id, tokens.scopes, JSON.stringify(accounts.slice(0, 500))],
+  );
+  const grantId = grant.rows[0]!.id;
+  await db.query(`update public.oauth_pending_grants set ciphertext = $2 where id = $1`, [
+    grantId,
+    encryptSecret(refreshToken, cfg.tokenEncryptionKey!, `pending:${grantId}`),
+  ]);
+  return NextResponse.redirect(new URL(`/app/connections/choose?grant=${grantId}`, cfg.appUrl));
+}
+
+/** Queue the first import right away and process it after the response. */
+async function startFirstSync(connectionId: string): Promise<void> {
+  const { supabase } = await getUser();
+  const r = await supabase.rpc("request_sync", { p_connection_id: connectionId });
+  if (!r.error) kickJobs();
 }

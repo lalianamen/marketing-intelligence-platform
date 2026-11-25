@@ -11,6 +11,12 @@ import { AccessDeniedError } from "@/server/auth/authz";
 import { CSV_LIMITS } from "@/server/ingestion/csv";
 import { BUSINESS_TYPES } from "@/lib/businessTypes";
 import { kickJobs } from "@/server/jobs/kick";
+import { loadConfig } from "@/server/config";
+import { getCompanyAccess } from "@/server/auth/authz";
+import { decryptSecret } from "@/server/crypto";
+import { withTransaction } from "@/server/db";
+import { createLiveConnection, type GoogleProvider } from "@/server/oauth/connect";
+import type { DiscoveredAccount } from "@/server/connectors/google";
 
 // Server actions. Each action authenticates the user; writes go through
 // RLS-checked RPCs (user client) or, for CSV intake, through server-side
@@ -182,4 +188,49 @@ export async function deleteCompanyAction(form: FormData): Promise<void> {
   revalidatePath("/app", "layout");
   kickJobs();
   redirect("/app/companies?deleted=1");
+}
+
+export async function chooseGoogleAccountsAction(form: FormData): Promise<void> {
+  const { user } = await requireUser();
+  const grantId = String(form.get("grant") ?? "");
+  const picked = form.getAll("account").map(String).slice(0, 50);
+  const back = (msg: string) => redirect("/app/connections?oauth=" + encodeURIComponent(msg));
+  if (!/^[0-9a-f-]{36}$/i.test(grantId)) back("This connection attempt expired. Please try again.");
+  if (picked.length === 0) redirect(`/app/connections/choose?grant=${grantId}&error=1`);
+  const cfg = loadConfig();
+  const db = getPool();
+  const g = (
+    await db.query<{ id: string; workspace_id: string; company_id: string; provider_id: GoogleProvider; ciphertext: string; scopes: string[]; accounts: DiscoveredAccount[] }>(
+      `delete from public.oauth_pending_grants where id = $1 and user_id = $2 and expires_at > now() returning *`,
+      [grantId, user.id],
+    )
+  ).rows[0];
+  if (!g) back("This connection attempt expired. Please try again.");
+  const grant = g!;
+  if ((await getCompanyAccess(db, user.id, grant.company_id)) !== "manage") back("Not found, or you do not have access.");
+  const chosen = grant.accounts.filter((a) => picked.includes(a.id));
+  if (chosen.length === 0) back("Please choose at least one account.");
+  const refreshToken = decryptSecret(grant.ciphertext, cfg.tokenEncryptionKey!, `pending:${grant.id}`);
+  const ids = await withTransaction(async (c) => {
+    const out: string[] = [];
+    for (const account of chosen) {
+      out.push(
+        await createLiveConnection(c, {
+          workspaceId: grant.workspace_id,
+          companyId: grant.company_id,
+          userId: user.id,
+          provider: grant.provider_id,
+          account,
+          refreshToken,
+          scopes: grant.scopes,
+          encryptionKey: cfg.tokenEncryptionKey!,
+        }),
+      );
+    }
+    return out;
+  }, db);
+  const { supabase } = await getUser();
+  for (const id of ids) await supabase.rpc("request_sync", { p_connection_id: id });
+  kickJobs();
+  redirect(`/app/connections?connected=${encodeURIComponent(chosen.map((a) => a.name).join(", "))}`);
 }

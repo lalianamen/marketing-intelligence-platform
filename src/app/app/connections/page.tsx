@@ -8,7 +8,7 @@ import { disconnectAction, syncNowAction } from "../actions";
 
 const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
 
-export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; imported?: string; sample?: string; queued?: string; oauth?: string }> }) {
+export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; imported?: string; sample?: string; queued?: string; oauth?: string; connected?: string }> }) {
   const sp = await searchParams;
   const ctx = await getCompanyContext();
   const { supabase } = await getUser();
@@ -33,6 +33,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       {sp.imported && <Notice tone="green">Import started. Your data will appear in the dashboard in a moment.</Notice>}
       {sp.sample && <Notice tone="green">Sample data connection added.</Notice>}
       {sp.queued && <Notice tone="green">Update requested.</Notice>}
+      {sp.connected && <Notice tone="green">Connected: {sp.connected}. The first import is running — numbers appear on the dashboard in a minute or two.</Notice>}
       {space.status !== "ready" && <Notice tone="blue">This company&apos;s data space is still being prepared ({space.status}). You can add data once it is ready.</Notice>}
       <AutoRefresh active={running || space.status === "pending" || space.status === "preparing"} />
 
