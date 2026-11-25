@@ -85,7 +85,9 @@ buffer (GA4 60 min, Ads 30 min) + 0–15 min deterministic jitter. At most 4 con
   3. Maintenance re-queues companies stuck in `deleting` for more than 10 minutes, except label mismatches.
   There is no grace period and no export step: deletion is immediate and cannot be undone. `audit_logs` and
   `usage_events` keep `company_id` (no foreign key) as the deletion record.
-- `csv_uploads.rows` keeps validated rows for re-import and provenance. A retention period for it is not yet defined.
+- `csv_uploads.rows` holds validated rows only until the import: they are emptied once imported or failed, and after
+  7 days for files never imported. The numbers live only in the warehouse; the app database keeps file name, size,
+  hash, row count and summary.
 
 ## Troubleshooting
 

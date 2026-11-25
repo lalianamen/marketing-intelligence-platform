@@ -133,6 +133,7 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
         ])
       ).rows[0];
       if (!up) throw new SyncError("csv_upload_missing", "CSV upload not found", false);
+      if (!Array.isArray(up.rows) || up.rows.length === 0) throw new SyncError("csv_upload_expired", "CSV rows are no longer stored; upload the file again", false);
       const out = normalizeCsvRows(up.rows, { syncRunId: run.id, companyTimezone: company.timezone, now });
       normalized = out.normalized;
       const w = await wh.insertRaw(ref, out.raw);
@@ -234,7 +235,8 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
         where id = $1`,
       [conn.id, now, dataAsOf],
     );
-    if (run.csv_upload_id) await db.query(`update public.csv_uploads set status = 'imported' where id = $1`, [run.csv_upload_id]);
+    // Business numbers live only in the warehouse: the CSV rows are dropped from the app database once imported.
+    if (run.csv_upload_id) await db.query(`update public.csv_uploads set status = 'imported', rows = '[]'::jsonb where id = $1`, [run.csv_upload_id]);
 
     await recordUsage(db, {
       workspaceId: run.workspace_id,

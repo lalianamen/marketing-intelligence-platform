@@ -29,7 +29,15 @@ export async function storeValidatedUpload(
     opts.companyId,
     hash,
   ]);
-  if (existing.rows[0]) return { uploadId: existing.rows[0].id, duplicateOf: existing.rows[0].id, validation };
+  if (existing.rows[0]) {
+    // Same file again: rows were dropped after the earlier import, so keep this copy until it is imported.
+    await db.query(`update public.csv_uploads set rows = $2, summary = $3, status = 'validated' where id = $1 and status <> 'queued'`, [
+      existing.rows[0].id,
+      JSON.stringify(rows),
+      JSON.stringify(result.summary),
+    ]);
+    return { uploadId: existing.rows[0].id, duplicateOf: existing.rows[0].id, validation };
+  }
 
   const filename = opts.filename.replace(/[^\w.\- ()]/g, "_").slice(0, 200) || "upload.csv";
   const ins = await db.query<{ id: string }>(

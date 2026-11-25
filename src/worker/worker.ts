@@ -103,7 +103,7 @@ export async function runSyncOnce(deps: WorkerDeps): Promise<"idle" | "succeeded
     const outcome = await failJob(deps.pool, "sync_runs", run, deps.workerId, e);
     if (outcome.status !== "queued") {
       await markConnectionFailure(deps.pool, String(run.connection_id), e.message);
-      if (run.csv_upload_id) await deps.pool.query(`update public.csv_uploads set status = 'failed' where id = $1`, [run.csv_upload_id]);
+      if (run.csv_upload_id) await deps.pool.query(`update public.csv_uploads set status = 'failed', rows = '[]'::jsonb where id = $1`, [run.csv_upload_id]);
     }
     log({ level: "warn", msg: "sync.failed", sync_run_id: run.id, code: e.code, error: redact(e.message), outcome });
     return "failed";
@@ -114,6 +114,11 @@ export async function runMaintenanceOnce(deps: WorkerDeps): Promise<{ recovered:
   const recovered =
     (await recoverExpiredLeases(deps.pool, "provisioning_jobs")) + (await recoverExpiredLeases(deps.pool, "sync_runs"));
   const reconciled = (await reconcileProvisioning(deps.pool)) + (await reconcileDeletions(deps.pool));
+  // Validated CSV files that were never imported are not kept in the app database for more than 7 days.
+  await deps.pool.query(
+    `update public.csv_uploads set rows = '[]'::jsonb
+      where status in ('validated', 'failed') and created_at < now() - interval '7 days' and jsonb_array_length(rows) > 0`,
+  );
   const enqueued = await withTransaction((c) => enqueueDueSyncs(c, deps.now?.() ?? new Date()), deps.pool);
   if (recovered || reconciled || enqueued) {
     (deps.log ?? jsonLog)({ level: "info", msg: "maintenance", recovered, reconciled, enqueued });
