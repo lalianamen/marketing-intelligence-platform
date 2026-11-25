@@ -46,7 +46,12 @@ export function fmtDelta(pct: number | null): { text: string; tone: "up" | "down
   return { text: `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`, tone: pct > 0 ? "up" : "down" };
 }
 
-export function fmtDateTime(iso: string | null | undefined): string {
+export function fmtDateTime(iso: string | null | undefined, timeZone?: string): string {
   if (!iso) return "never";
-  return new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  const opts: Intl.DateTimeFormatOptions = { dateStyle: "medium", timeStyle: "short" };
+  try {
+    return new Date(iso).toLocaleString("en-US", timeZone ? { ...opts, timeZone } : opts);
+  } catch {
+    return new Date(iso).toLocaleString("en-US", opts);
+  }
 }

@@ -34,6 +34,16 @@ export interface Warehouse {
   getDatasetLabels(ref: DatasetRef): Promise<Partial<DatasetLabels> | null>;
   /** Drops the dataset and all its tables. Returns 'not_found' if it is already gone. Callers must verify labels first. */
   deleteDataset(ref: DatasetRef): Promise<"deleted" | "not_found">;
+  /** Raw provider records of the given sync runs (identical payloads shown once), newest day first. */
+  queryRaw(ref: DatasetRef, syncRunIds: string[], limit: number): Promise<{ rows: RawRecord[]; stats: QueryStats }>;
+  /**
+   * Deletes one connection's data: normalized rows matching origin / simulation flag / account (when given)
+   * and raw rows of its sync runs. Returns the affected date range so the caller can rebuild the mart.
+   */
+  deleteConnectionData(
+    ref: DatasetRef,
+    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[] },
+  ): Promise<{ range: DateRange | null }>;
   /** Empties the data tables (raw, normalized, mart) and keeps the dataset and schema. */
   clearData(ref: DatasetRef): Promise<void>;
   ensureSchema(ref: DatasetRef, version: number): Promise<number>;

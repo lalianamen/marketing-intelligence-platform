@@ -111,6 +111,57 @@ export class LocalWarehouse implements Warehouse {
     }
   }
 
+  async queryRaw(ref: DatasetRef, syncRunIds: string[], limit: number): Promise<{ rows: RawRecord[]; stats: QueryStats }> {
+    const s = schema(ref);
+    if (syncRunIds.length === 0) return { rows: [], stats: NO_STATS };
+    try {
+      const r = await this.pool.query(
+        `select * from (
+           select distinct on (record_date, source, payload_json)
+             record_id, sync_run_id, origin, source, to_char(record_date, 'YYYY-MM-DD') as record_date,
+             to_char(ingested_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ingested_at,
+             payload_json::text as payload_json, is_simulated, schema_version
+           from ${s}.raw_records
+           where sync_run_id = any($1::text[]) and record_date >= current_date - 400
+           order by record_date, source, payload_json, ingested_at desc) d
+         order by record_date desc, source, ingested_at desc
+         limit $2`,
+        [syncRunIds, Math.min(Math.max(limit, 1), 2000)],
+      );
+      return { rows: r.rows as RawRecord[], stats: NO_STATS };
+    } catch (err) {
+      mapPgError(err);
+    }
+  }
+
+  async deleteConnectionData(
+    ref: DatasetRef,
+    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[] },
+  ): Promise<{ range: DateRange | null }> {
+    const s = schema(ref);
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const del = await client.query<{ from: string | null; to: string | null }>(
+        `with d as (
+           delete from ${s}.norm_campaign_daily
+            where origin = $1 and is_simulated = $2 and ($3::text is null or account_id = $3)
+            returning metric_date)
+         select to_char(min(metric_date), 'YYYY-MM-DD') as "from", to_char(max(metric_date), 'YYYY-MM-DD') as "to" from d`,
+        [scope.origin, scope.isSimulated, scope.accountId],
+      );
+      if (scope.syncRunIds.length) await client.query(`delete from ${s}.raw_records where sync_run_id = any($1::text[])`, [scope.syncRunIds]);
+      await client.query("commit");
+      const row = del.rows[0];
+      return { range: row?.from && row.to ? { from: row.from, to: row.to } : null };
+    } catch (err) {
+      await client.query("rollback").catch(() => undefined);
+      mapPgError(err);
+    } finally {
+      client.release();
+    }
+  }
+
   async clearData(ref: DatasetRef): Promise<void> {
     const s = schema(ref);
     try {

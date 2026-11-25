@@ -102,6 +102,18 @@ Google user can read and connects it:
   `GOOGLE_ADS_ENABLED=true` (set it once Google approves API access for real accounts). "Try with sample data" is shown
   only where live Google sign-in is not configured (local development).
 
+## Connector page (`/app/connections/<id>`)
+
+- Status, account, last update and data date, in the company's time zone.
+- **Automatic updates**: every day at a chosen local time, or only manual ("Update now"). Owner/admin/member only.
+- **Update history** of this connector and a **Raw data** table: the provider's records as stored in `raw_records`
+  (GA4 values labelled with the requested dimension/metric names, nested payloads flattened), newest days first,
+  identical payloads from repeated updates shown once, latest 500 rows.
+- **Disconnect** stops updates and removes the stored sign-in; imported data stays.
+- **Delete** removes the connector and the data it imported (its normalized rows: same origin, simulation flag and,
+  for live connectors, account; its raw rows by sync run), rebuilds the mart for the affected days, then deletes runs,
+  schedule and token. Refused while an update is running.
+
 ## Future connectors: design notes, no access promised
 
 | Provider | Notes |

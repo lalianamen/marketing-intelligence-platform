@@ -22,17 +22,18 @@ function ago(iso: string | null): string {
 
 const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
 
-function ConnectorCard({ c, lastRun }: { c: ConnectionRow; lastRun: SyncRunRow | undefined }) {
+function ConnectorCard({ c, lastRun, tz }: { c: ConnectionRow; lastRun: SyncRunRow | undefined; tz: string }) {
   const b = modeBadge(c.mode);
   return (
-    <li className="rounded-xl border border-gray-200 bg-white p-4" data-testid="connector-card">
+    <li className="relative rounded-xl border border-gray-200 bg-white p-4 transition hover:border-brand-300 hover:shadow-sm" data-testid="connector-card">
+      <a href={`/app/connections/${c.id}`} className="absolute inset-0 rounded-xl" aria-label={`Open ${PROVIDER_LABEL[c.provider_id] ?? c.provider_id}`} />
       <div className="flex items-start justify-between gap-2">
         <p className="font-medium text-gray-900">{PROVIDER_LABEL[c.provider_id] ?? c.provider_id}</p>
         <Badge tone={b.tone}>{b.text}</Badge>
       </div>
       {c.external_account_name && <p className="text-xs text-gray-500">{c.external_account_name}</p>}
       <dl className="mt-3 space-y-1 text-sm">
-        <div className="flex justify-between gap-2"><dt className="text-gray-500">Last update</dt><dd className="text-right font-medium text-gray-900" title={fmtDateTime(c.last_synced_at)}>{ago(c.last_synced_at)}</dd></div>
+        <div className="flex justify-between gap-2"><dt className="text-gray-500">Last update</dt><dd className="text-right font-medium text-gray-900" title={fmtDateTime(c.last_synced_at, tz)}>{ago(c.last_synced_at)}</dd></div>
         <div className="flex justify-between gap-2"><dt className="text-gray-500">Data up to</dt><dd className="text-right text-gray-900">{c.data_as_of ?? "—"}</dd></div>
         {lastRun && (
           <div className="flex justify-between gap-2">
@@ -89,7 +90,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <a href="/app/connections" className="text-sm text-brand-700 hover:underline">Manage connections →</a>
         </div>
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {conns.connections.map((c) => <ConnectorCard key={c.id} c={c} lastRun={lastRunByConn.get(c.id)} />)}
+          {conns.connections.map((c) => <ConnectorCard key={c.id} c={c} lastRun={lastRunByConn.get(c.id)} tz={company.timezone} />)}
           <li>
             <a href="/app/connections" className="flex h-full min-h-32 items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white p-4 text-sm font-medium text-brand-700 hover:border-brand-300 hover:bg-brand-50">
               + Connect a source or upload CSV

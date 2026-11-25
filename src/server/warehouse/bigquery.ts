@@ -194,6 +194,44 @@ export class BigQueryWarehouse implements Warehouse {
     }
   }
 
+  async queryRaw(ref: DatasetRef, syncRunIds: string[], limit: number): Promise<{ rows: RawRecord[]; stats: QueryStats }> {
+    if (syncRunIds.length === 0) return { rows: [], stats: { bytesProcessed: null, bytesBilled: null } };
+    const res = await this.run(
+      ref,
+      `SELECT record_id, sync_run_id, origin, source, CAST(record_date AS STRING) AS record_date,
+         FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', ingested_at) AS ingested_at, payload_json, is_simulated, schema_version
+       FROM ${this.fq(ref, "raw_records")}
+       WHERE sync_run_id IN UNNEST(@ids) AND record_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 400 DAY)
+       QUALIFY ROW_NUMBER() OVER (PARTITION BY record_date, source, payload_json ORDER BY ingested_at DESC) = 1
+       ORDER BY record_date DESC, source, ingested_at DESC
+       LIMIT @lim`,
+      { ids: syncRunIds, lim: Math.min(Math.max(limit, 1), 2000) },
+      { ids: ["STRING"], lim: "INT64" },
+    );
+    return { rows: res.rows as unknown as RawRecord[], stats: res.stats };
+  }
+
+  async deleteConnectionData(
+    ref: DatasetRef,
+    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[] },
+  ): Promise<{ range: DateRange | null }> {
+    const where = `origin = @origin AND is_simulated = @sim AND (@acct IS NULL OR account_id = @acct)`;
+    const params = { origin: scope.origin, sim: scope.isSimulated, acct: scope.accountId };
+    const types = { origin: "STRING", sim: "BOOL", acct: "STRING" };
+    const r = await this.run(
+      ref,
+      `SELECT CAST(MIN(metric_date) AS STRING) AS f, CAST(MAX(metric_date) AS STRING) AS t FROM ${this.fq(ref, "norm_campaign_daily")} WHERE ${where}`,
+      params,
+      types,
+    );
+    await this.run(ref, `DELETE FROM ${this.fq(ref, "norm_campaign_daily")} WHERE ${where}`, params, types);
+    if (scope.syncRunIds.length) {
+      await this.run(ref, `DELETE FROM ${this.fq(ref, "raw_records")} WHERE sync_run_id IN UNNEST(@ids)`, { ids: scope.syncRunIds }, { ids: ["STRING"] });
+    }
+    const row = r.rows[0] as { f?: string | null; t?: string | null } | undefined;
+    return { range: row?.f && row.t ? { from: row.f, to: row.t } : null };
+  }
+
   async clearData(ref: DatasetRef): Promise<void> {
     for (const t of ["raw_records", "norm_campaign_daily", "mart_daily_source"]) {
       await this.run(ref, `TRUNCATE TABLE ${this.fq(ref, t)}`);

@@ -16,6 +16,8 @@ import { getCompanyAccess } from "@/server/auth/authz";
 import { decryptSecret } from "@/server/crypto";
 import { withTransaction } from "@/server/db";
 import { createLiveConnection, type GoogleProvider } from "@/server/oauth/connect";
+import { deleteConnection, updateSchedule } from "@/server/connections/manage";
+import { getWarehouse } from "@/server/warehouse";
 import type { DiscoveredAccount } from "@/server/connectors/google";
 
 // Server actions. Each action authenticates the user; writes go through
@@ -87,10 +89,13 @@ export async function enableSampleConnectionAction(form: FormData): Promise<void
 
 export async function syncNowAction(form: FormData): Promise<void> {
   const { supabase } = await requireUser();
-  const r = await supabase.rpc("request_sync", { p_connection_id: String(form.get("connection_id") ?? "") });
-  if (r.error) redirect("/app/connections?error=" + encodeURIComponent(friendly(r.error.message)));
+  const id = String(form.get("connection_id") ?? "");
+  const backRaw = String(form.get("back") ?? "");
+  const back = /^\/app\/connections\/[0-9a-f-]{36}$/i.test(backRaw) ? backRaw : "/app/connections";
+  const r = await supabase.rpc("request_sync", { p_connection_id: id });
+  if (r.error) redirect(`${back}?error=` + encodeURIComponent(friendly(r.error.message)));
   kickJobs();
-  redirect("/app/connections?queued=1");
+  redirect(`${back}?queued=1`);
 }
 
 export async function disconnectAction(form: FormData): Promise<void> {
@@ -245,4 +250,42 @@ export async function clearCompanyDataAction(form: FormData): Promise<void> {
   revalidatePath("/app", "layout");
   kickJobs();
   redirect("/app/settings?cleared=1");
+}
+
+export async function updateScheduleAction(form: FormData): Promise<void> {
+  const { user } = await requireUser();
+  const id = String(form.get("connection_id") ?? "");
+  try {
+    await updateSchedule(getPool(), user.id, id, {
+      frequency: String(form.get("frequency") ?? ""),
+      localTime: String(form.get("local_time") ?? "").slice(0, 5),
+    });
+  } catch (err) {
+    const m = (err as Error).message;
+    redirect(`/app/connections/${id}?error=` + encodeURIComponent(/invalid time/.test(m) ? "Please choose a valid time." : friendly(m)));
+  }
+  redirect(`/app/connections/${id}?saved=1`);
+}
+
+export async function disconnectConnectionAction(form: FormData): Promise<void> {
+  const { supabase } = await requireUser();
+  const id = String(form.get("connection_id") ?? "");
+  const r = await supabase.rpc("disconnect_connection", { p_connection_id: id });
+  if (r.error) redirect(`/app/connections/${id}?error=` + encodeURIComponent(friendly(r.error.message)));
+  redirect("/app/connections");
+}
+
+export async function deleteConnectionAction(form: FormData): Promise<void> {
+  const { user } = await requireUser();
+  const id = String(form.get("connection_id") ?? "");
+  const cfg = loadConfig();
+  let name = "";
+  try {
+    ({ name } = await deleteConnection(getPool(), (p) => getWarehouse(p, cfg), user.id, id));
+  } catch (err) {
+    const m = (err as Error).message;
+    redirect(`/app/connections/${id}?error=` + encodeURIComponent(/busy/.test(m) ? "An update is running right now. Try again in a minute." : friendly(m)));
+  }
+  revalidatePath("/app", "layout");
+  redirect("/app/connections?deleted=" + encodeURIComponent(name));
 }

@@ -1,4 +1,5 @@
 import { GA4_SCOPE, type FetchLike, postJson, refreshAccessToken } from "./google";
+import { GA4_DIMENSIONS, GA4_METRICS } from "../../lib/rawView";
 import { type Connector, ConnectorError, type FetchContext, type FetchResult, type ProviderDailyRecord } from "./types";
 
 // GA4 LIVE connector — Google Analytics Data API v1beta `runReport`.
@@ -52,8 +53,8 @@ export class Ga4Connector implements Connector {
         { authorization: `Bearer ${accessToken}` },
         {
           dateRanges: [{ startDate: ctx.window.from, endDate: ctx.window.to }],
-          dimensions: [{ name: "date" }, { name: "sessionCampaignId" }, { name: "sessionCampaignName" }],
-          metrics: [{ name: "sessions" }, { name: "keyEvents" }, { name: "totalRevenue" }],
+          dimensions: GA4_DIMENSIONS.map((name) => ({ name })),
+          metrics: GA4_METRICS.map((name) => ({ name })),
           limit: PAGE_SIZE,
           offset,
           keepEmptyRows: false,

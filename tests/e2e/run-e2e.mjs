@@ -173,6 +173,18 @@ try {
   step("sample Google Ads connection syncs and is labelled SIMULATED everywhere");
   await page.screenshot({ path: `${OUT}/06-analytics-with-sample.png`, fullPage: true });
 
+  await page.goto(`${BASE}/app/connections`);
+  await page.locator('[data-testid="connection-row"]:has-text("Google Ads") a:has-text("Open")').click();
+  await page.waitForURL(/\/app\/connections\/[0-9a-f-]{36}$/);
+  await page.getByTestId("raw-table").waitFor();
+  assert.ok((await page.locator('[data-testid="raw-table"] tbody tr').count()) > 0, "raw rows are listed");
+  await page.locator('[data-testid="schedule-form"] input[name="local_time"]').fill("09:30");
+  await page.locator('[data-testid="schedule-form"] button:has-text("Save")').click();
+  await page.waitForURL(/saved=1/);
+  assert.equal(await page.locator('[data-testid="schedule-form"] input[name="local_time"]').inputValue(), "09:30");
+  await page.screenshot({ path: `${OUT}/10-connector.png`, fullPage: true });
+  step("connector page: schedule saved, raw data table shown");
+
   await page.goto(`${BASE}/app?days=90`);
   await page.locator('[data-testid="connector-card"]').first().waitFor();
   assert.ok((await page.locator('[data-testid="connector-card"]').count()) >= 2, "dashboard lists connectors");
