@@ -130,32 +130,51 @@ export function ga4GroupById(id: string): Ga4Group | undefined {
   return GA4_GROUPS.find((g) => g.id === id);
 }
 
-/** Keeps only known, switchable group ids, in catalog order. */
-export function sanitizeGa4Groups(ids: unknown): string[] {
-  const list = Array.isArray(ids) ? ids.map(String) : [];
-  return GA4_OPTIONAL_GROUPS.map((g) => g.id).filter((id) => list.includes(id));
+export interface Ga4OptionalField extends Ga4Field {
+  group: string;
+  kind: "dimension" | "metric";
 }
 
-/** The one GA4 request for the chosen groups: base fields first, then each group's, in catalog order. */
-export function ga4Fields(groupIds: unknown): { dimensions: string[]; metrics: string[] } {
-  const chosen = [GA4_CORE, ...sanitizeGa4Groups(groupIds).map((id) => ga4GroupById(id)!)];
-  const dimensions: string[] = [];
-  const metrics: string[] = [];
-  for (const g of chosen) {
-    for (const d of g.dimensions) if (!dimensions.includes(d.name)) dimensions.push(d.name);
-    for (const m of g.metrics) if (!metrics.includes(m.name)) metrics.push(m.name);
+/** Every field a user can switch on, with its group (plan tiers attach to groups), in catalog order. */
+export const GA4_OPTIONAL_FIELDS: Ga4OptionalField[] = GA4_OPTIONAL_GROUPS.flatMap((g) => [
+  ...g.dimensions.map((f) => ({ ...f, group: g.id, kind: "dimension" as const })),
+  ...g.metrics.map((f) => ({ ...f, group: g.id, kind: "metric" as const })),
+]);
+
+export function isGa4SelectionItem(item: string): boolean {
+  return GA4_OPTIONAL_FIELDS.some((f) => f.name === item) || GA4_OPTIONAL_GROUPS.some((g) => g.id === item);
+}
+
+/**
+ * The chosen optional fields, in catalog order. The saved list holds field names;
+ * a whole group id (how earlier settings were saved) means all of its fields.
+ */
+export function sanitizeGa4Selection(items: unknown): string[] {
+  const list = Array.isArray(items) ? items.map(String) : [];
+  return GA4_OPTIONAL_FIELDS.filter((f) => list.includes(f.name) || list.includes(f.group)).map((f) => f.name);
+}
+
+/** The one GA4 request: base fields first, then the chosen fields, in catalog order. */
+export function ga4Fields(selection: unknown): { dimensions: string[]; metrics: string[] } {
+  const chosen = sanitizeGa4Selection(selection);
+  const dimensions = GA4_CORE.dimensions.map((d) => d.name);
+  const metrics = GA4_CORE.metrics.map((m) => m.name);
+  for (const f of GA4_OPTIONAL_FIELDS) {
+    if (!chosen.includes(f.name)) continue;
+    const list = f.kind === "dimension" ? dimensions : metrics;
+    if (!list.includes(f.name)) list.push(f.name);
   }
   return { dimensions, metrics };
 }
 
 /** null when the selection fits in one GA4 request, otherwise a plain explanation. */
-export function ga4SelectionProblem(groupIds: unknown): string | null {
-  const { dimensions, metrics } = ga4Fields(groupIds);
+export function ga4SelectionProblem(selection: unknown): string | null {
+  const { dimensions, metrics } = ga4Fields(selection);
   if (dimensions.length > GA4_MAX_DIMENSIONS) {
-    return `GA4 allows at most ${GA4_MAX_DIMENSIONS} breakdowns in one table; this choice needs ${dimensions.length}. Turn another group off first.`;
+    return `GA4 allows at most ${GA4_MAX_DIMENSIONS} breakdowns in one table; this choice needs ${dimensions.length}. Switch another breakdown off first.`;
   }
   if (metrics.length > GA4_MAX_METRICS) {
-    return `GA4 allows at most ${GA4_MAX_METRICS} numbers in one table; this choice needs ${metrics.length}. Turn another group off first.`;
+    return `GA4 allows at most ${GA4_MAX_METRICS} numbers in one table; this choice needs ${metrics.length}. Switch another number off first.`;
   }
   return null;
 }

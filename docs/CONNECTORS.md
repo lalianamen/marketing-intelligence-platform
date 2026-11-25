@@ -121,6 +121,9 @@ Google user can read and connects it:
   time or manual only, with a note to switch everything on before the first load. "Start loading" saves the schedule,
   queues the period in parts of up to one month (`request_history`) and sets `activated_at`.
 - Reconnecting after an expired sign-in keeps the schedule; reconnecting a disconnected connector goes through setup again.
+- Selection is per field: a group's switch adds or removes all its fields, a checkbox adds or removes one field.
+  `settings.ga4_reports` stores field names (older settings with group ids mean all fields of the group).
+  Base fields are always on (they feed the dashboard). A removed breakdown is summed into the remaining rows.
 - Switches are a draft (`Ga4GroupPicker`): nothing is saved or deleted until Save; "Undo changes" restores the
   saved set; the bar shows the live counts and what will be added or removed. In setup, Save only stores the set.
 - After the first load, Save (with at least one real change) asks for confirmation: all data of the connector (dashboard

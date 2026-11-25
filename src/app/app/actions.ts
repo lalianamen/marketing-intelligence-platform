@@ -299,7 +299,7 @@ export async function deleteConnectionAction(form: FormData): Promise<void> {
 export async function saveGa4GroupsAction(form: FormData): Promise<void> {
   const { supabase, user } = await requireUser();
   const id = String(form.get("connection_id") ?? "");
-  const groups = form.getAll("group").map(String);
+  const groups = form.getAll("field").map(String);
   const cfg = loadConfig();
   const db = getPool();
   const conn = (await db.query<{ activated_at: Date | null; timezone: string }>(

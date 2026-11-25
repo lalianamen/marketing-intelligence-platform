@@ -4,7 +4,7 @@ import { AccessDeniedError, getCompanyAccess } from "../auth/authz";
 import { getResourceForCompany, toDatasetRef } from "../registry/registry";
 import { computeNextRun } from "../scheduling/schedule";
 import type { RawRecord } from "../../lib/model";
-import { GA4_OPTIONAL_GROUPS, ga4SelectionProblem, sanitizeGa4Groups } from "../../lib/ga4Catalog";
+import { GA4_OPTIONAL_FIELDS, GA4_OPTIONAL_GROUPS, ga4SelectionProblem, isGa4SelectionItem, sanitizeGa4Selection } from "../../lib/ga4Catalog";
 import { type RawColumn, type RawTableParams, rawColumnsFor } from "../../lib/rawTable";
 import type { Warehouse, WarehouseProvider } from "../warehouse/types";
 
@@ -182,28 +182,39 @@ export async function setGa4Report(
 ): Promise<{ changed: boolean }> {
   const c = await requireManage(db, userId, connectionId);
   if (!GA4_OPTIONAL_GROUPS.some((g) => g.id === groupId)) throw new Error("unknown report");
-  const current = sanitizeGa4Groups(c.settings?.ga4_reports);
-  return setGa4Groups(db, getWarehouse, userId, connectionId, on ? [...current, groupId] : current.filter((g) => g !== groupId));
+  const current = sanitizeGa4Selection(c.settings?.ga4_reports);
+  const groupFields = GA4_OPTIONAL_FIELDS.filter((f) => f.group === groupId).map((f) => f.name);
+  return setGa4Groups(db, getWarehouse, userId, connectionId, on ? [...current, ...groupFields] : current.filter((f) => !groupFields.includes(f)));
 }
 
-/** Saves the whole chosen set of GA4 groups at once (the user picks first, then saves). */
+/**
+ * Saves the whole chosen set of GA4 fields at once (the user picks first, then saves).
+ * Items are field names; a group id stands for all of its fields.
+ */
 export async function setGa4Groups(
   db: Queryable,
   _getWarehouse: (p: WarehouseProvider) => Promise<Warehouse>,
   userId: string,
   connectionId: string,
-  groups: string[],
+  items: string[],
 ): Promise<{ changed: boolean; added: string[]; removed: string[] }> {
   const c = await requireManage(db, userId, connectionId);
   if (c.provider_id !== "ga4" || c.mode !== "live") throw new Error("data groups can be chosen only for live GA4 connectors");
-  if (groups.some((g) => !GA4_OPTIONAL_GROUPS.some((o) => o.id === g))) throw new Error("unknown report");
-  const current = sanitizeGa4Groups(c.settings?.ga4_reports);
-  const next = sanitizeGa4Groups(groups);
+  if (items.some((g) => !isGa4SelectionItem(g))) throw new Error("unknown report");
+  const current = sanitizeGa4Selection(c.settings?.ga4_reports);
+  const next = sanitizeGa4Selection(items);
   const problem = ga4SelectionProblem(next);
   if (problem) throw new Error(problem);
   const added = next.filter((g) => !current.includes(g));
   const removed = current.filter((g) => !next.includes(g));
-  if (added.length === 0 && removed.length === 0) return { changed: false, added, removed };
+  // Older settings stored group ids: rewrite them as field names even when the fields are the same.
+  const stored = Array.isArray(c.settings?.ga4_reports) ? c.settings!.ga4_reports!.map(String) : [];
+  if (added.length === 0 && removed.length === 0) {
+    if (JSON.stringify(stored) !== JSON.stringify(next)) {
+      await db.query(`update public.company_connections set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{ga4_reports}', $2::jsonb) where id = $1`, [c.id, JSON.stringify(next)]);
+    }
+    return { changed: false, added, removed };
+  }
   await db.query(
     `update public.company_connections set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{ga4_reports}', $2::jsonb), updated_at = now() where id = $1`,
     [c.id, JSON.stringify(next)],
@@ -211,7 +222,7 @@ export async function setGa4Groups(
   await db.query(
     `insert into public.audit_logs (workspace_id, company_id, actor_user_id, action, target_type, target_id, metadata)
      values ($1, $2, $3, 'connection.report_toggled', 'connection', $4, $5)`,
-    [c.workspace_id, c.company_id, userId, c.id, JSON.stringify({ groups: next, added, removed })],
+    [c.workspace_id, c.company_id, userId, c.id, JSON.stringify({ fields: next, added, removed })],
   );
   return { changed: true, added, removed };
 }

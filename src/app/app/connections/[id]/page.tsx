@@ -17,7 +17,7 @@ import { displayValue, parseRawTableParams, rawTableQuery, valueAt } from "@/lib
 import { RawFilterRow } from "@/components/RawFilterRow";
 import { ScrollX } from "@/components/ScrollX";
 import { Expandable } from "@/components/Expandable";
-import { GA4_GROUPS, GA4_MAX_DIMENSIONS, GA4_MAX_METRICS, ga4Fields, sanitizeGa4Groups } from "@/lib/ga4Catalog";
+import { GA4_GROUPS, GA4_MAX_DIMENSIONS, GA4_MAX_METRICS, ga4Fields, sanitizeGa4Selection } from "@/lib/ga4Catalog";
 import { Ga4GroupPicker } from "@/components/Ga4GroupPicker";
 import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, startLoadingAction, syncNowAction, saveGa4GroupsAction, updateScheduleAction } from "../../actions";
 import { addDays, localDate } from "@/lib/dates";
@@ -36,7 +36,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
   const cfg = loadConfig();
   const isGa4Live = c.provider_id === "ga4" && c.mode === "live";
   const inSetup = c.mode !== "manual" && !c.activated_at;
-  const enabledReports = isGa4Live ? sanitizeGa4Groups(c.settings?.ga4_reports) : [];
+  const enabledReports = isGa4Live ? sanitizeGa4Selection(c.settings?.ga4_reports) : [];
   const fieldsNow = ga4Fields(enabledReports);
   // GA4 rows of the one table have source "ga4" (rows of the former separate reports are not shown).
   const rawSource = c.provider_id === "ga4" ? "ga4" : undefined;
@@ -146,8 +146,9 @@ export default async function ConnectionPage({ params, searchParams }: { params:
           <summary className="cursor-pointer text-base font-semibold">Data in the table <span className="ml-2 text-sm font-normal text-gray-500">{fieldsNow.dimensions.length} of {GA4_MAX_DIMENSIONS} breakdowns · {fieldsNow.metrics.length} of {GA4_MAX_METRICS} numbers</span></summary>
           <p className="mt-2 text-xs text-gray-500">
             {inSetup
-              ? "Switch on everything you want in the table before the first load. Each group adds its columns to the same table."
-              : "Each group adds its columns to the one table. Choose everything first, then press Save: only then all data of this connector is deleted and the last 30 days are loaded again."}
+              ? "Tick every column you want in the table before the first load — a whole group with its switch, or single fields."
+              : "Tick the columns you want — a whole group with its switch, or single fields. Choose everything first, then press Save: only then all data of this connector is deleted and the last 30 days are loaded again."}
+            {" "}Fewer breakdowns give fewer, larger rows: a removed breakdown is added up into the remaining ones.
             {" "}GA4 allows at most {GA4_MAX_DIMENSIONS} breakdowns and {GA4_MAX_METRICS} numbers in one table.
           </p>
           {sp.groups_saved && <div className="mt-3"><Notice tone="green">Saved. These columns will be in the table from the first load.</Notice></div>}

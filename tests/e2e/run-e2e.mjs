@@ -262,10 +262,14 @@ try {
     await page.click('button:has-text("Undo changes")');
     await bar.getByText("No changes").waitFor();
     await page.click('button[role="switch"][aria-label="Traffic sources"]');
+    // single fields: untick one breakdown of the group, tick it back
+    await page.getByRole("checkbox", { name: "sessionMedium" }).uncheck();
+    await bar.getByText("add: sessionSource, sessionDefaultChannelGroup").waitFor(); // the unticked field is left out
+    await page.getByRole("checkbox", { name: "sessionMedium" }).check();
     await page.click('[data-testid="ga4-picker"] button[type="submit"]:has-text("Save")');
     await page.getByText("Saved. These columns will be in the table").waitFor();
     const saved = (await db.query(`select settings->'ga4_reports' as g from public.company_connections where id = $1`, [live])).rows[0].g;
-    assert.deepEqual(saved, ["traffic_sources"], "saved only on Save");
+    assert.deepEqual(saved, ["sessionSource", "sessionMedium", "sessionDefaultChannelGroup"], "saved only on Save");
 
     // After the first load, Save asks before deleting and reloading; Cancel changes nothing.
     await db.query(`update public.company_connections set activated_at = now() where id = $1`, [live]);
@@ -274,10 +278,10 @@ try {
     await page.click('button[role="switch"][aria-label="Devices and technology"]');
     await page.click('button:has-text("Save and reload…")');
     await page.locator("dialog[open]").getByText("The whole current table of this connector will be deleted").waitFor();
-    assert.ok(await page.locator("dialog[open]").getByText("Add: Devices and technology").isVisible());
+    assert.ok(await page.locator("dialog[open]").getByText("Add: deviceCategory, operatingSystem, browser").isVisible());
     await page.locator("dialog[open]").getByRole("button", { name: "Cancel" }).click();
     const still = (await db.query(`select settings->'ga4_reports' as g from public.company_connections where id = $1`, [live])).rows[0].g;
-    assert.deepEqual(still, ["traffic_sources"], "cancel keeps the saved set");
+    assert.deepEqual(still, ["sessionSource", "sessionMedium", "sessionDefaultChannelGroup"], "cancel keeps the saved set");
     await db.end();
     step("data groups: pick several, then Save; after the first load Save warns before reloading");
   }

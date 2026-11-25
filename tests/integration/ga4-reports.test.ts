@@ -66,7 +66,7 @@ describe("GA4 one table", () => {
   it("a switched-on group adds its columns to the same table; the dashboard still counts each visit once", async () => {
     const deps = await workerDeps({ syncOverrides: { connectorOverride: () => fakeGa4 } });
     await setGa4Report(pool, deps.getWarehouse, U.id, conn, "traffic_sources", true);
-    expect((await loadConnection(pool, U.id, conn))!.settings.ga4_reports).toEqual(["traffic_sources"]);
+    expect((await loadConnection(pool, U.id, conn))!.settings.ga4_reports).toEqual(["sessionSource", "sessionMedium", "sessionDefaultChannelGroup"]);
     expect(await sync(deps)).toBe("succeeded");
     expect(await sync(deps)).toBe("succeeded"); // a repeated load replaces, never duplicates
 
@@ -84,16 +84,18 @@ describe("GA4 one table", () => {
     const deps = await workerDeps();
     await setGa4Report(pool, deps.getWarehouse, U.id, conn, "devices", true); // 3 + 3 + 3 = 9
     await expect(setGa4Report(pool, deps.getWarehouse, U.id, conn, "landing_pages", true)).rejects.toThrow(/at most 9 breakdowns/);
-    expect((await loadConnection(pool, U.id, conn))!.settings.ga4_reports).toEqual(["traffic_sources", "devices"]);
+    expect((await loadConnection(pool, U.id, conn))!.settings.ga4_reports).toEqual([...["sessionSource", "sessionMedium", "sessionDefaultChannelGroup"], "deviceCategory", "operatingSystem", "browser"]);
     await setGa4Report(pool, deps.getWarehouse, U.id, conn, "devices", false);
   });
 
   it("several groups are saved in one go; saving the same set changes nothing", async () => {
     const deps = await workerDeps();
     expect(await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources"])).toEqual({ changed: false, added: [], removed: [] });
-    expect(await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["engagement", "traffic_sources", "users"])).toEqual({ changed: true, added: ["engagement", "users"], removed: [] });
-    await expect(setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources", "devices", "landing_pages"])).rejects.toThrow(/at most 9 breakdowns/);
-    expect((await loadConnection(pool, U.id, conn))!.settings.ga4_reports).toEqual(["traffic_sources", "engagement", "users"]);
+    expect(await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources", "users"])).toEqual({ changed: true, added: ["totalUsers", "newUsers"], removed: [] });
+    // single fields: drop one breakdown, keep one number of a group
+    expect(await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["sessionSource", "sessionMedium", "newUsers"])).toEqual({ changed: true, added: [], removed: ["sessionDefaultChannelGroup", "totalUsers"] });
+    await expect(setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources", "devices", "landingPage"])).rejects.toThrow(/at most 9 breakdowns/);
+    expect((await loadConnection(pool, U.id, conn))!.settings.ga4_reports).toEqual(["sessionSource", "sessionMedium", "newUsers"]);
     await setGa4Groups(pool, deps.getWarehouse, U.id, conn, ["traffic_sources"]);
   });
 
