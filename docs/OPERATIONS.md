@@ -102,11 +102,11 @@ buffer (GA4 60 min, Ads 30 min) + 0–15 min deterministic jitter. At most 4 con
 
 ## Scheduler
 
-- Due daily syncs are enqueued by maintenance inside `/api/jobs/run` (protected by `CRON_SECRET`).
-- Vercel Hobby cron calls it once a day (`vercel.json`, 16:00 UTC). The GitHub Actions workflow
-  `.github/workflows/scheduler.yml` calls it hourly (minute 7) when the repository secret `CRON_SECRET` is set to the
-  same value as in Vercel, so a connector's chosen local time is honoured to within about an hour.
-- Without the hourly trigger, scheduled updates run only at the daily cron.
+- Due daily syncs are enqueued by maintenance inside `/api/jobs/run`.
+- Hourly trigger, inside the platform: Supabase `pg_cron` runs `net.http_get(<app>/api/jobs/run)` at minute 7 with a
+  Bearer token. The token is generated inside Supabase Vault (`mip_scheduler_token`) and never shown; the app accepts it
+  by comparing its SHA-256 with `private.scheduler_tokens`. Set up once per environment with
+  `select private.configure_scheduler('https://<app host>');` (idempotent).
+- Vercel Cron (`vercel.json`, daily 16:00 UTC, Bearer `CRON_SECRET`) stays as a fallback.
 - An API sync replaces its window: the connector's normalized rows for those days are deleted and rewritten, so
   campaigns the provider no longer returns do not remain and double count.
-

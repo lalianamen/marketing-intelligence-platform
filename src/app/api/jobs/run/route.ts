@@ -1,22 +1,18 @@
-import { timingSafeEqual } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
+import { getPool } from "@/server/db";
 import { runPendingWork } from "@/server/jobs/runner";
+import { isSchedulerRequest } from "@/server/jobs/schedulerAuth";
 
-// Called by Vercel Cron (Authorization: Bearer $CRON_SECRET) or any scheduler.
+// Called by Vercel Cron (Bearer $CRON_SECRET, daily) and by the database's hourly
+// scheduler (pg_cron + pg_net, Bearer token kept in Supabase Vault).
 // Runs maintenance (lease recovery, reconciliation, due schedules) and drains jobs.
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || secret.length < 16) return false;
-  const got = Buffer.from(req.headers.get("authorization") ?? "");
-  const want = Buffer.from(`Bearer ${secret}`);
-  return got.length === want.length && timingSafeEqual(got, want);
-}
-
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!(await isSchedulerRequest(getPool(), req.headers.get("authorization"), process.env.CRON_SECRET))) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
   const summary = await runPendingWork({ budgetMs: 50_000, maintenance: true });
   return NextResponse.json({ ok: true, ...summary });
 }
