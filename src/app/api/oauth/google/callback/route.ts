@@ -69,7 +69,10 @@ export async function GET(request: NextRequest) {
     } catch (err) {
       const e = err as ConnectorError;
       console.error(JSON.stringify({ level: "warn", msg: "oauth.discovery_failed", provider: st.provider_id, code: e.code, error: redact(e.message ?? "") }));
-      if (e.code === "not_configured") return back(`${label} account listing is not enabled for this app yet (administrator: enable the API in Google Cloud).`);
+      if (e.code === "not_configured") {
+        const project = /project number (\d+)/.exec(e.message)?.[1];
+        return back(`${label} account listing is not enabled for this app yet (administrator: enable the API in Google Cloud${project ? `, project number ${project}` : ""}; it can take a few minutes to apply).`);
+      }
       if (st.provider_id === "google_ads" && e.code === "permission_denied")
         return back("Google Ads did not allow this app to read your accounts yet: the app's Google Ads API access is still limited to test accounts.");
       return back(`Could not read your ${label} accounts from Google. Please try again.`);

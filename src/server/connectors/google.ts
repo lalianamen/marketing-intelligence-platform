@@ -131,7 +131,9 @@ async function getJson(f: FetchLike, url: string, headers: Record<string, string
   const body = await res.text();
   if (!res.ok) {
     if (/SERVICE_DISABLED|has not been used in project|is disabled/.test(body)) {
-      throw new ConnectorError("not_configured", `${provider}: the API is not enabled in the app's Google Cloud project`);
+      // The project number is not secret and tells the administrator where to enable the API.
+      const project = /projects?[ /=]+(\d{6,})/.exec(body)?.[1];
+      throw new ConnectorError("not_configured", `${provider}: the API is not enabled in the app's Google Cloud project${project ? ` (project number ${project})` : ""}`);
     }
     throw connectorErrorFromHttp(res.status, body, provider);
   }
