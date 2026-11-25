@@ -75,6 +75,11 @@ export interface Warehouse {
   ensureSchema(ref: DatasetRef, version: number): Promise<number>;
   insertRaw(ref: DatasetRef, rows: RawRecord[]): Promise<{ written: number; stats: QueryStats }>;
   upsertNormalized(ref: DatasetRef, rows: NormalizedRow[]): Promise<{ written: number; stats: QueryStats }>;
+  /**
+   * Safety net against duplicate rows: in the range, keeps exactly one row per raw record_id and per
+   * normalized grain (the newest) and returns how many extra copies were removed (normally 0).
+   */
+  removeDuplicates(ref: DatasetRef, range: DateRange): Promise<{ raw: number; normalized: number }>;
   rebuildMart(ref: DatasetRef, range: DateRange): Promise<{ stats: QueryStats }>;
   queryDaily(ref: DatasetRef, range: DateRange): Promise<{ rows: MartRow[]; stats: QueryStats }>;
   queryCampaigns(ref: DatasetRef, range: DateRange, limit: number): Promise<{ rows: CampaignRow[]; stats: QueryStats }>;

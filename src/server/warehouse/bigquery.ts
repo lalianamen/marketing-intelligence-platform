@@ -407,6 +407,43 @@ export class BigQueryWarehouse implements Warehouse {
     return { written, stats };
   }
 
+  async removeDuplicates(ref: DatasetRef, range: DateRange): Promise<{ raw: number; normalized: number }> {
+    const raw = await this.dedupeTable(ref, "raw_records", "record_date", ["record_id"], "ingested_at", range);
+    const normalized = await this.dedupeTable(ref, "norm_campaign_daily", "metric_date", ["metric_date", "origin", "source", "account_id", "campaign_id"], "updated_at", range);
+    return { raw, normalized };
+  }
+
+  /**
+   * BigQuery has no unique constraints, so uniqueness is checked after each write.
+   * A cheap read finds keys that occur more than once; only then one MERGE replaces
+   * all copies of those keys with the newest copy (ON FALSE: delete by source, insert once).
+   */
+  private async dedupeTable(ref: DatasetRef, table: string, dateCol: string, keyCols: string[], newestCol: string, range: DateRange): Promise<number> {
+    const t = this.fq(ref, table);
+    const key = (alias: string) => `TO_JSON_STRING(STRUCT(${keyCols.map((c) => `${alias}${c} AS ${c}`).join(", ")}))`;
+    const found = await this.run(
+      ref,
+      `SELECT ${key("")} AS k, COUNT(*) AS n FROM ${t} WHERE ${dateCol} BETWEEN @from AND @to GROUP BY k HAVING COUNT(*) > 1 LIMIT 10000`,
+      { from: range.from, to: range.to },
+      { from: "DATE", to: "DATE" },
+    );
+    if (found.rows.length === 0) return 0;
+    const keys = found.rows.map((r) => String(r.k));
+    const extra = found.rows.reduce((sum, r) => sum + Number(r.n) - 1, 0);
+    await this.run(
+      ref,
+      `MERGE ${t} T
+       USING (SELECT * FROM ${t} WHERE ${dateCol} BETWEEN @from AND @to AND ${key("")} IN UNNEST(@keys)
+              QUALIFY ROW_NUMBER() OVER (PARTITION BY ${keyCols.join(", ")} ORDER BY ${newestCol} DESC) = 1) S
+       ON FALSE
+       WHEN NOT MATCHED BY SOURCE AND T.${dateCol} BETWEEN @from AND @to AND ${key("T.")} IN UNNEST(@keys) THEN DELETE
+       WHEN NOT MATCHED THEN INSERT ROW`,
+      { from: range.from, to: range.to, keys },
+      { from: "DATE", to: "DATE", keys: ["STRING"] },
+    );
+    return extra;
+  }
+
   async rebuildMart(ref: DatasetRef, range: DateRange): Promise<{ stats: QueryStats }> {
     const res = await this.run(
       ref,

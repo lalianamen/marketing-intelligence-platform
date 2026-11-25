@@ -216,7 +216,15 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
       window && touched
         ? { from: window.from < touched.from ? window.from : touched.from, to: window.to > touched.to ? window.to : touched.to }
         : (window ?? touched);
-    if (martRange) await wh.rebuildMart(ref, martRange);
+    if (martRange) {
+      // Uniqueness check before the dashboard days are rebuilt: any extra copy of a row
+      // (BigQuery has no unique constraints) is removed and reported, never counted twice.
+      const dup = await wh.removeDuplicates(ref, martRange);
+      if (dup.raw + dup.normalized > 0) {
+        await addIssue(db, run, "warning", "duplicates_removed", `Removed ${dup.raw + dup.normalized} duplicate row(s) after the load.`, dup);
+      }
+      await wh.rebuildMart(ref, martRange);
+    }
 
     // Validation: days with no rows inside the window (could be zero activity or
     // missing data — reported, never invented).

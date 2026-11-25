@@ -77,6 +77,7 @@ describe("GA4 one table", () => {
     const ref = { provider: "local" as const, projectId: r.project_id, datasetId: r.dataset_id, location: r.location };
     const daily = (await (await localWarehouse()).queryDaily(ref, { from: "2026-11-01", to: "2026-11-03" })).rows;
     expect(daily.map((d) => d.sessions)).toEqual([18, 18, 18]); // 17 + 1, summed back per day
+    expect(await (await localWarehouse()).removeDuplicates(ref, { from: "2026-11-01", to: "2026-11-03" })).toEqual({ raw: 0, normalized: 0 });
   });
 
   it("the GA4 limit of 9 breakdowns is enforced before anything changes", async () => {

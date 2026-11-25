@@ -87,3 +87,16 @@ the same day replaces the raw row instead of adding a second copy. An API sync a
 normalized rows for its window before writing, so rows the provider stopped returning disappear. Querying
 `raw_records` directly therefore gives one row per grain and does not double count.
 
+
+## No duplicates: layered guarantees
+
+1. **Stable keys.** `record_id` (raw) includes every requested dimension value (for GA4 the `rawKey`), so a row split
+   by a breakdown is its own key; the normalized grain is date × origin × source × account × campaign.
+2. **Upsert, not append.** Both layers are written with MERGE / `on conflict` on those keys.
+3. **Window replacement.** An API sync deletes the connector's rows for its window before writing.
+4. **One writer per connector.** The queue runs at most one load per connection at a time.
+5. **One format per table.** Changing the GA4 data groups deletes all of the connector's data and reloads 30 days.
+6. **Check after every write.** Postgres enforces uniqueness with primary keys. BigQuery has no unique constraints,
+   so after each load `removeDuplicates` looks for keys stored more than once in the loaded days (one cheap read);
+   if any are found, one MERGE keeps only the newest copy, the load records a `duplicates_removed` warning, and only
+   then the dashboard days are rebuilt from the cleaned rows.

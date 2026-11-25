@@ -333,6 +333,23 @@ export class LocalWarehouse implements Warehouse {
     }
   }
 
+  async removeDuplicates(ref: DatasetRef, range: DateRange): Promise<{ raw: number; normalized: number }> {
+    // Postgres enforces uniqueness itself (primary keys on record_id and on the normalized grain),
+    // so this only verifies it — the same check the BigQuery warehouse needs to act on.
+    const s = schema(ref);
+    try {
+      const r = await this.pool.query<{ raw: number; normalized: number }>(
+        `select (select count(*) - count(distinct record_id) from ${s}.raw_records where record_date between $1 and $2)::int as raw,
+                (select count(*) - count(distinct (metric_date, origin, source, account_id, campaign_id))
+                   from ${s}.norm_campaign_daily where metric_date between $1 and $2)::int as normalized`,
+        [range.from, range.to],
+      );
+      return { raw: r.rows[0]?.raw ?? 0, normalized: r.rows[0]?.normalized ?? 0 };
+    } catch (err) {
+      mapPgError(err);
+    }
+  }
+
   async rebuildMart(ref: DatasetRef, range: DateRange): Promise<{ stats: QueryStats }> {
     const s = schema(ref);
     const client = await this.pool.connect();

@@ -175,6 +175,26 @@ describe("BigQuery adapter (mocked SDK)", () => {
     return { client, create, getMetadata, job };
   }
 
+  it("duplicate check: nothing to do when every key is unique; otherwise one MERGE keeps the newest copy", async () => {
+    const { client, job } = mockClient();
+    const wh = new BigQueryWarehouse(client as never, { maxBytesBilled: 1000, billingApproved: true });
+    job.getQueryResults.mockResolvedValue([[]]);
+    expect(await wh.removeDuplicates(ref, { from: "2026-11-01", to: "2026-11-03" })).toEqual({ raw: 0, normalized: 0 });
+    expect(client.createQueryJob).toHaveBeenCalledTimes(2); // two reads, no writes
+
+    client.createQueryJob.mockClear();
+    job.getQueryResults
+      .mockResolvedValueOnce([[{ k: '{"record_id":"a"}', n: 3 }]]) // raw: one id stored 3 times
+      .mockResolvedValueOnce([[]]) // the MERGE
+      .mockResolvedValueOnce([[]]); // normalized: clean
+    expect(await wh.removeDuplicates(ref, { from: "2026-11-01", to: "2026-11-03" })).toEqual({ raw: 2, normalized: 0 });
+    const merge = client.createQueryJob.mock.calls[1]![0];
+    expect(merge.query).toMatch(/MERGE .*raw_records.* T/s);
+    expect(merge.query).toMatch(/ON FALSE/);
+    expect(merge.query).toMatch(/ROW_NUMBER\(\) OVER \(PARTITION BY record_id ORDER BY ingested_at DESC\) = 1/);
+    expect(merge.params.keys).toEqual(['{"record_id":"a"}']);
+  });
+
   it("refuses to create datasets until billing is explicitly approved", async () => {
     const { client, create } = mockClient();
     const wh = new BigQueryWarehouse(client as never, { maxBytesBilled: 1000, billingApproved: false });
