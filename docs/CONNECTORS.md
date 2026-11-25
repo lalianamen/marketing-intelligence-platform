@@ -178,6 +178,19 @@ Google user can read and connects it:
   ~3 days are preliminary and re-read (lookback 4 days).
 - Administrator: enable `searchconsole.googleapis.com` in the OAuth client's Cloud project.
 
+## Microsoft Clarity (working)
+
+- Connect: Add connector → Microsoft Clarity → project ID + project API token (Clarity → Settings → Data Export →
+  Generate new API token). The token is checked with one request, stored encrypted like OAuth tokens, never shown again.
+- Data Export API `project-live-insights` (Microsoft limits: 10 requests per project per day, at most 3 breakdowns,
+  1,000 rows, last 1–3 days only, no dates in the answer, UTC). One load = `numOfDays=1` (last 24 hours), filed under
+  the previous day; the schedule defaults to 00:30; whatever window a run asks for, it is set to that one day
+  (`Connector.singleDay`), so replacing never touches other days. No history load.
+- Columns: breakdowns `source, medium, campaign, channel, device, os, browser, country, url` (max 3,
+  `src/lib/clarityCatalog.ts`); every number Clarity returns is stored as `<metricName>.<field>` and shown as columns.
+- Clarity numbers are not added to dashboard totals (its sessions would repeat GA4's): one empty dashboard row per day
+  keeps the day's coverage; the table holds the numbers.
+
 ## Future connectors: design notes, no access promised
 
 | Provider | Notes |

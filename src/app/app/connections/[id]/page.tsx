@@ -35,6 +35,8 @@ export default async function ConnectionPage({ params, searchParams }: { params:
   const tz = ctx.company.timezone;
   const cfg = loadConfig();
   const isGa4Live = c.provider_id === "ga4" && c.mode === "live";
+  // Clarity has no dates (only the last 24 hours): no period to choose, no history to load.
+  const isClarity = c.provider_id === "microsoft_clarity";
   const inSetup = c.mode !== "manual" && !c.activated_at;
   // Connectors with a choice of columns (GA4, Search Console): one table, chosen columns.
   const catalog = c.mode === "live" ? columnCatalog(c.provider_id) : null;
@@ -145,7 +147,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
 
       {catalog && (
         <details id="ga4-reports" className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog" open={inSetup || Boolean(sp.groups_saved || sp.groups_unchanged || sp.error || sp.export || sp.export_error || sp.export_off)}>
-          <summary className="cursor-pointer text-base font-semibold">Data in the table <span className="ml-2 text-sm font-normal text-gray-500">{exportLiftsLimits(c) || catalog.maxDimensions === null ? `${fieldsNow.dimensions.length} breakdowns · ${fieldsNow.metrics.length} numbers` : `${fieldsNow.dimensions.length} of ${catalog.maxDimensions} breakdowns · ${fieldsNow.metrics.length} of ${catalog.maxMetrics} numbers`}</span></summary>
+          <summary className="cursor-pointer text-base font-semibold">Data in the table <span className="ml-2 text-sm font-normal text-gray-500">{catalog.maxBreakdowns !== undefined ? `${fieldsNow.dimensions.length - 1} of ${catalog.maxBreakdowns} breakdowns` : exportLiftsLimits(c) || catalog.maxDimensions === null ? `${fieldsNow.dimensions.length} breakdowns · ${fieldsNow.metrics.length} numbers` : `${fieldsNow.dimensions.length} of ${catalog.maxDimensions} breakdowns · ${fieldsNow.metrics.length} of ${catalog.maxMetrics} numbers`}</span></summary>
           <p className="mt-2 text-xs text-gray-500">
             {inSetup
               ? "Tick every column you want in the table before the first load — a whole group with its switch, or single fields."
@@ -231,20 +233,29 @@ export default async function ConnectionPage({ params, searchParams }: { params:
         <Card title="Period and schedule">
           <form action={startLoadingAction} className="space-y-4 text-sm" data-testid="start-loading-form">
             <input type="hidden" name="connection_id" value={c.id} />
-            <fieldset className="space-y-2">
-              <legend className="font-medium text-gray-800">2. Period to load</legend>
-              <div className="flex flex-wrap items-end gap-3">
-                <label className="block">
-                  <span className="text-gray-700">From</span>
-                  <input type="date" name="from" required min={addDays(yesterday, -399)} max={yesterday} defaultValue={addDays(yesterday, -29)} className="mt-1 block rounded-lg border border-gray-300 px-2 py-1" />
-                </label>
-                <label className="block">
-                  <span className="text-gray-700">To</span>
-                  <input type="date" name="to" required min={addDays(yesterday, -399)} max={yesterday} defaultValue={yesterday} className="mt-1 block rounded-lg border border-gray-300 px-2 py-1" />
-                </label>
-                <span className="text-xs text-gray-500">Default: the last 30 complete days. Up to 400 days back, loaded in parts of up to one month.</span>
-              </div>
-            </fieldset>
+            {isClarity ? (
+              <fieldset className="space-y-1">
+                <legend className="font-medium text-gray-800">2. Period</legend>
+                <input type="hidden" name="from" value={yesterday} />
+                <input type="hidden" name="to" value={yesterday} />
+                <p className="text-gray-600">Clarity gives only the last 24 hours, so the first load is yesterday and history builds up day by day from now on. Past days cannot be loaded.</p>
+              </fieldset>
+            ) : (
+              <fieldset className="space-y-2">
+                <legend className="font-medium text-gray-800">2. Period to load</legend>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="block">
+                    <span className="text-gray-700">From</span>
+                    <input type="date" name="from" required min={addDays(yesterday, -399)} max={yesterday} defaultValue={addDays(yesterday, -29)} className="mt-1 block rounded-lg border border-gray-300 px-2 py-1" />
+                  </label>
+                  <label className="block">
+                    <span className="text-gray-700">To</span>
+                    <input type="date" name="to" required min={addDays(yesterday, -399)} max={yesterday} defaultValue={yesterday} className="mt-1 block rounded-lg border border-gray-300 px-2 py-1" />
+                  </label>
+                  <span className="text-xs text-gray-500">Default: the last 30 complete days. Up to 400 days back, loaded in parts of up to one month.</span>
+                </div>
+              </fieldset>
+            )}
             <fieldset className="space-y-2">
               <legend className="font-medium text-gray-800">3. Automatic updates</legend>
               <div className="flex flex-wrap items-center gap-3">
@@ -301,7 +312,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
         </div>
       </div>
 
-      {canManage && c.mode !== "manual" && (
+      {canManage && c.mode !== "manual" && !isClarity && (
         <Card title="Load history">
           <div id="history" />
           {sp.history && <div className="mb-3"><Notice tone="green">History load queued in {sp.history} part{sp.history === "1" ? "" : "s"} of up to one month. Parts load one after another; progress shows in Update history.</Notice></div>}

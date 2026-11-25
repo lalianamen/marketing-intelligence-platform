@@ -124,7 +124,9 @@ export function Ga4GroupPicker({
       {canManage && (
         <div className="sticky bottom-0 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white/95 p-3 text-sm shadow-sm" data-testid="ga4-picker-bar">
           <p className="text-gray-700">
-            {unlimited || cat.maxDimensions === null
+            {cat.maxBreakdowns !== undefined
+              ? `${fields.dimensions.length - 1} of ${cat.maxBreakdowns} breakdowns`
+              : unlimited || cat.maxDimensions === null
               ? `${fields.dimensions.length} breakdowns · ${fields.metrics.length} numbers${unlimited ? " (no limit with full data)" : ""}`
               : `${fields.dimensions.length} of ${cat.maxDimensions} breakdowns · ${fields.metrics.length} of ${cat.maxMetrics} numbers`}
             {dirty ? (

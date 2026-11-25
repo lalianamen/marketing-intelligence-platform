@@ -156,6 +156,12 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
               lookbackDays: connector.lookbackDays,
               initialBackfillDays: deps.cfg.initialBackfillDays,
             });
+      if (connector.singleDay) {
+        // No dates at the source (Clarity: "the last 24 hours"): the load is exactly yesterday,
+        // so replacing the window never touches other days.
+        const y = addDays(today, -1);
+        window = { from: y, to: y };
+      }
       if (!window) {
         return { rowsRead: 0, rowsWritten: 0, window: null, dataAsOf: conn.data_as_of };
       }

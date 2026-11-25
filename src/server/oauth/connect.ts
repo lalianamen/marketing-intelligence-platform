@@ -4,6 +4,7 @@ import { encryptSecret } from "../crypto";
 import type { DiscoveredAccount } from "../connectors/google";
 
 export type GoogleProvider = "ga4" | "google_ads" | "google_search_console";
+export type LiveProvider = GoogleProvider | "microsoft_clarity";
 
 export function defaultAccountName(provider: GoogleProvider, id: string): string {
   if (provider === "google_search_console") return id;
@@ -20,8 +21,10 @@ export async function createLiveConnection(
     workspaceId: string;
     companyId: string;
     userId: string;
-    provider: GoogleProvider;
+    provider: LiveProvider;
     account: DiscoveredAccount;
+    /** Default time of the daily update (e.g. right after midnight for Clarity). */
+    localTime?: string;
     refreshToken: string;
     scopes: string[];
     encryptionKey: string;
@@ -50,11 +53,11 @@ export async function createLiveConnection(
   // Reconnecting an existing connector (e.g. after the Google sign-in expired) keeps its schedule.
   await c.query(
     `insert into public.sync_schedules (workspace_id, company_id, connection_id, frequency, local_time, timezone, buffer_minutes, next_run_at, enabled)
-     select $1, $2, $3, 'daily', coalesce(s.sync_local_time, '06:00'), co.timezone, $4, null, false
+     select $1, $2, $3, 'daily', coalesce($5::time, s.sync_local_time, '06:00'), co.timezone, $4, null, false
        from public.companies co left join public.company_settings s on s.company_id = co.id where co.id = $2
      on conflict (connection_id) do update
        set next_run_at = case when public.sync_schedules.enabled then now() else public.sync_schedules.next_run_at end, updated_at = now()`,
-    [args.workspaceId, args.companyId, id, args.provider === "ga4" ? 60 : 30],
+    [args.workspaceId, args.companyId, id, args.provider === "ga4" ? 60 : args.provider === "microsoft_clarity" ? 0 : 30, args.localTime ?? null],
   );
   await c.query(
     `insert into public.audit_logs (workspace_id, company_id, actor_user_id, action, target_type, target_id, metadata)

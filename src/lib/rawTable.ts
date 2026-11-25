@@ -38,6 +38,15 @@ export function rawColumnsFor(origin: string, samplePayloads: string[], ga4Group
     return [...f.dimensions, ...f.metrics].filter((n) => n !== "date").map((n) => ({ label: n, path: [n] }));
   }
   const cat = columnCatalog(origin);
+  if (cat?.metricsFromData) {
+    // Chosen breakdowns first, then every number found in the stored rows.
+    const dims = cat.fields(ga4Groups).dimensions.filter((n) => n !== "date");
+    const nums: string[] = [];
+    for (const p of samplePayloads)
+      for (const k of Object.keys(flattenRawPayload(origin, p)))
+        if (k !== "date" && !dims.includes(k) && !nums.includes(k) && nums.length < 40) nums.push(k);
+    return [...dims.map((n) => ({ label: n, path: [n] })), ...nums.map((n) => ({ label: n, path: n.split(".") }))];
+  }
   if (cat) {
     const f = cat.fields(ga4Groups);
     return [...f.dimensions, ...f.metrics].filter((n) => n !== "date").map((n) => ({ label: n, path: [n] }));

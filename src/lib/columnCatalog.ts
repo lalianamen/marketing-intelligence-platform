@@ -12,6 +12,7 @@ import {
   sanitizeGa4Selection,
 } from "./ga4Catalog";
 import { GSC_GROUPS } from "./gscCatalog";
+import { CLARITY_GROUPS, CLARITY_MAX_BREAKDOWNS } from "./clarityCatalog";
 
 export interface ColumnCatalog {
   provider: string;
@@ -20,12 +21,21 @@ export interface ColumnCatalog {
   groups: Ga4Group[];
   maxDimensions: number | null;
   maxMetrics: number | null;
+  /** Limit on chosen breakdowns (base columns not counted), when the source has one. */
+  maxBreakdowns?: number;
+  /** The numbers are whatever the source returns (columns read from the stored rows). */
+  metricsFromData?: boolean;
   sanitize(items: unknown): string[];
   fields(selection: unknown): { dimensions: string[]; metrics: string[] };
   problem(selection: unknown): string | null;
 }
 
-function generic(provider: string, settingsKey: string, groups: Ga4Group[]): ColumnCatalog {
+function generic(
+  provider: string,
+  settingsKey: string,
+  groups: Ga4Group[],
+  opts: { maxBreakdowns?: number; metricsFromData?: boolean; sourceName?: string } = {},
+): ColumnCatalog {
   const core = groups.find((g) => g.core)!;
   const optional = groups
     .filter((g) => !g.core)
@@ -51,7 +61,15 @@ function generic(provider: string, settingsKey: string, groups: Ga4Group[]): Col
       for (const f of optional) if (chosen.includes(f.name)) (f.kind === "dimension" ? dimensions : metrics).push(f.name);
       return { dimensions, metrics };
     },
-    problem: () => null,
+    maxBreakdowns: opts.maxBreakdowns,
+    metricsFromData: opts.metricsFromData,
+    problem(selection) {
+      if (opts.maxBreakdowns === undefined) return null;
+      const n = optional.filter((f) => f.kind === "dimension" && sanitize(selection).includes(f.name)).length;
+      return n > opts.maxBreakdowns
+        ? `${opts.sourceName ?? provider} allows at most ${opts.maxBreakdowns} breakdowns in one table; this choice needs ${n}. Switch another breakdown off first.`
+        : null;
+    },
   };
 }
 
@@ -67,6 +85,7 @@ const CATALOGS: Record<string, ColumnCatalog> = {
     problem: ga4SelectionProblem,
   },
   google_search_console: generic("google_search_console", "columns", GSC_GROUPS),
+  microsoft_clarity: generic("microsoft_clarity", "columns", CLARITY_GROUPS, { maxBreakdowns: CLARITY_MAX_BREAKDOWNS, metricsFromData: true, sourceName: "Clarity" }),
 };
 
 /** The column catalog of a provider, or null when its table has fixed columns. */

@@ -71,7 +71,7 @@ export interface FetchResult {
 }
 
 export interface Connector {
-  readonly providerId: "ga4" | "google_ads" | "google_search_console";
+  readonly providerId: "ga4" | "google_ads" | "google_search_console" | "microsoft_clarity";
   readonly origin: Origin;
   readonly mode: "live" | "simulated";
   readonly requiredScopes: readonly string[];
@@ -79,6 +79,8 @@ export interface Connector {
   readonly finalizationDays: number;
   /** Days re-fetched on every incremental sync to pick up late-arriving data. */
   readonly lookbackDays: number;
+  /** The source has no dates (only "the last 24 hours"): every load is exactly yesterday. */
+  readonly singleDay?: boolean;
   fetchDaily(ctx: FetchContext): Promise<FetchResult>;
 }
 

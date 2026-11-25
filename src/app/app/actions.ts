@@ -415,3 +415,48 @@ export async function setThemeAction(form: FormData): Promise<void> {
   revalidatePath("/", "layout");
   redirect("/app/account?saved=1#appearance");
 }
+
+/** Connects Microsoft Clarity with a project API token (checked with one API request first). */
+export async function connectClarityAction(form: FormData): Promise<void> {
+  const { user } = await requireUser();
+  const companyId = String(form.get("company_id") ?? "");
+  const projectId = String(form.get("project_id") ?? "").trim();
+  const token = String(form.get("token") ?? "").trim();
+  const back = (msg: string) => redirect("/app/connections/clarity?error=" + encodeURIComponent(msg));
+  if (!/^[A-Za-z0-9]{6,20}$/.test(projectId)) back("Please enter the Clarity project ID (letters and digits).");
+  if (token.length < 20 || token.length > 4000 || /\s/.test(token)) back("This does not look like a Clarity API token. Copy it again from Clarity → Settings → Data Export.");
+  const db = getPool();
+  const cfg = loadConfig();
+  if (!cfg.tokenEncryptionKey) back("Connections are not configured on this server yet.");
+  const access = await getCompanyAccess(db, user.id, companyId);
+  if (access !== "manage") back("Not found, or you do not have access.");
+  const { fetchClarityInsights } = await import("@/server/connectors/clarity");
+  try {
+    await fetchClarityInsights(fetch, token, []);
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    back(
+      code === "auth_expired"
+        ? "Clarity did not accept this token. Check that it was copied completely and belongs to this project."
+        : code === "quota_exceeded"
+        ? "Clarity's limit of 10 requests a day for this project is used up. Please try again tomorrow."
+        : "Could not reach Clarity. Please try again in a minute.",
+    );
+  }
+  const ws = (await db.query<{ workspace_id: string }>(`select workspace_id from public.companies where id = $1`, [companyId])).rows[0]!.workspace_id;
+  const id = await withTransaction((c) =>
+    createLiveConnection(c, {
+      workspaceId: ws,
+      companyId,
+      userId: user.id,
+      provider: "microsoft_clarity",
+      account: { id: projectId, name: `Clarity project ${projectId}`, group: null },
+      refreshToken: token,
+      scopes: [],
+      encryptionKey: cfg.tokenEncryptionKey!,
+      localTime: "00:30",
+    }),
+  );
+  revalidatePath("/app", "layout");
+  redirect(`/app/connections/${id}?setup=1`);
+}
