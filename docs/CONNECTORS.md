@@ -98,6 +98,9 @@ Google user can read and connects it:
   ticks the ones that belong to the company. The refresh token waits encrypted in `oauth_pending_grants`
   (server-only, 30 minutes) and each chosen account gets its own encrypted copy.
 - Typing the ID manually is still possible ("Enter the ID manually instead").
+- The "Add a connector" page lists only what can be connected now: CSV, GA4, and Google Ads only when
+  `GOOGLE_ADS_ENABLED=true` (set it once Google approves API access for real accounts). "Try with sample data" is shown
+  only where live Google sign-in is not configured (local development).
 
 ## Future connectors: design notes, no access promised
 

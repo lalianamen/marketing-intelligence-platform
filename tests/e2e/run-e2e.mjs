@@ -109,8 +109,9 @@ try {
   await page.getByText("No connectors yet").waitFor();
   await page.click('a:has-text("+ Add connector") >> nth=0');
   await page.waitForURL(/\/app\/connections\/new$/);
-  assert.match(await page.getByTestId("recommended-sources").innerText(), /Google Local Services Ads/);
-  step("Data Connections → + Add connector shows sources recommended for a local service business");
+  await page.getByText("Upload a spreadsheet (CSV)").waitFor();
+  assert.equal(await page.getByText("Other platforms").count(), 0, "only connectable sources are listed");
+  step("Data Connections → + Add connector lists only sources that can be connected now");
 
   await page.goto(`${BASE}/app/connections/csv`);
   await page.setInputFiles('input[name="file"]', "public/sample-marketing-data.csv");

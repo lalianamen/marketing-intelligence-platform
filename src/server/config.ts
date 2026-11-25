@@ -25,6 +25,8 @@ export interface ServerConfig {
     clientSecret: string | undefined;
     redirectUri: string;
     adsDeveloperToken: string | undefined;
+    /** Show Google Ads as connectable. Off until Google approves API access for real (non-test) accounts. */
+    adsEnabled: boolean;
     adsLoginCustomerId: string | undefined;
     adsApiVersion: string;
   };
@@ -72,6 +74,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET || undefined,
       redirectUri: env.GOOGLE_OAUTH_REDIRECT_URI ?? `${appUrl}/api/oauth/google/callback`,
       adsDeveloperToken: env.GOOGLE_ADS_DEVELOPER_TOKEN || undefined,
+      adsEnabled: env.GOOGLE_ADS_ENABLED === "true",
       adsLoginCustomerId: env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || undefined,
       adsApiVersion: env.GOOGLE_ADS_API_VERSION ?? "v26",
     },
