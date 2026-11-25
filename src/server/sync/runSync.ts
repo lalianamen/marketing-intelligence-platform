@@ -309,7 +309,8 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
         metadata: { provider: conn.provider_id },
       });
     }
-    return { rowsRead: normalized.length, rowsWritten: upsert.written, window, dataAsOf };
+    // "Rows" in the update history = rows of the connector's table (dashboard rows when there is no table, e.g. older runs).
+    return { rowsRead: normalized.length, rowsWritten: rawCount > 0 ? rawCount : upsert.written, window, dataAsOf };
   } catch (err) {
     if (err instanceof ConnectorError) {
       if (err.code === "auth_expired" || err.code === "permission_denied") {
