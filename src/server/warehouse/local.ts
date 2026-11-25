@@ -151,7 +151,12 @@ export class LocalWarehouse implements Warehouse {
          select to_char(min(metric_date), 'YYYY-MM-DD') as "from", to_char(max(metric_date), 'YYYY-MM-DD') as "to" from d`,
         [scope.origin, scope.isSimulated, scope.accountId, scope.range?.from ?? null, scope.range?.to ?? null],
       );
-      if (scope.syncRunIds.length) await client.query(`delete from ${s}.raw_records where sync_run_id = any($1::text[])`, [scope.syncRunIds]);
+      if (scope.syncRunIds.length) {
+        await client.query(
+          `delete from ${s}.raw_records where sync_run_id = any($1::text[]) and ($2::date is null or record_date between $2::date and $3::date)`,
+          [scope.syncRunIds, scope.range?.from ?? null, scope.range?.to ?? null],
+        );
+      }
       await client.query("commit");
       const row = del.rows[0];
       return { range: row?.from && row.to ? { from: row.from, to: row.to } : null };
@@ -226,7 +231,8 @@ export class LocalWarehouse implements Warehouse {
         `insert into ${s}.raw_records
            select * from jsonb_to_recordset($1::jsonb) as x(record_id text, sync_run_id text, origin text, source text,
              record_date date, ingested_at timestamptz, payload_json jsonb, is_simulated boolean, schema_version int)
-         on conflict (record_id) do nothing`,
+         on conflict (record_id) do update set sync_run_id = excluded.sync_run_id, ingested_at = excluded.ingested_at,
+           payload_json = excluded.payload_json, is_simulated = excluded.is_simulated, schema_version = excluded.schema_version`,
         [JSON.stringify(rows.map((row) => ({ ...row, payload_json: JSON.parse(row.payload_json) })))],
       );
       return { written: r.rowCount ?? 0, stats: NO_STATS };

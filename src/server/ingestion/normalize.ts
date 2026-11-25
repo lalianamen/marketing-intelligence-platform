@@ -19,6 +19,11 @@ export function dataStatusFor(date: string, today: string, finalizationDays: num
   return date > addDays(today, -finalizationDays - 1) ? "preliminary" : "final";
 }
 
+/** Raw row id = the row's grain (date, origin, source, account, campaign), the sample flag and a duplicate counter. */
+export function rawRecordId(grainKey: string, isSimulated: boolean, occurrence: number): string {
+  return sha256Hex(`raw|${grainKey}|${isSimulated ? "sim" : "real"}|${occurrence}`);
+}
+
 export function normalizeCsvRows(
   rows: CsvRow[],
   ctx: { syncRunId: string; companyTimezone: string; now: Date },
@@ -56,7 +61,8 @@ export function normalizeCsvRows(
       updated_at: updatedAt,
     });
     raw.push({
-      record_id: sha256Hex(`${ctx.syncRunId}|${rowKey(base)}`),
+      // Stable natural key (not per run): re-importing the same grain replaces the raw row.
+      record_id: rawRecordId(rowKey(base), false, 0),
       sync_run_id: ctx.syncRunId,
       origin: "csv",
       source: r.source,
@@ -77,6 +83,7 @@ export function normalizeProviderRecords(
   const updatedAt = ctx.now.toISOString();
   // Aggregate duplicates of the same grain (e.g. GA4 rows that share an ID).
   const byKey = new Map<string, NormalizedRow>();
+  const seen = new Map<string, number>();
   const raw: RawRecord[] = [];
   for (const rec of records) {
     const base = {
@@ -109,8 +116,11 @@ export function normalizeProviderRecords(
         updated_at: updatedAt,
       });
     }
+    const occurrence = seen.get(key) ?? 0;
+    seen.set(key, occurrence + 1);
     raw.push({
-      record_id: sha256Hex(`${ctx.syncRunId}|${key}|${raw.length}`),
+      // Stable natural key (not per run), so a re-sync replaces instead of adding a second copy.
+      record_id: rawRecordId(key, ctx.isSimulated, occurrence),
       sync_run_id: ctx.syncRunId,
       origin: ctx.origin,
       source: ctx.origin,

@@ -245,7 +245,12 @@ export class BigQueryWarehouse implements Warehouse {
     );
     await this.run(ref, `DELETE FROM ${this.fq(ref, "norm_campaign_daily")} WHERE ${where}`, params, types);
     if (scope.syncRunIds.length) {
-      await this.run(ref, `DELETE FROM ${this.fq(ref, "raw_records")} WHERE sync_run_id IN UNNEST(@ids)`, { ids: scope.syncRunIds }, { ids: ["STRING"] });
+      await this.run(
+        ref,
+        `DELETE FROM ${this.fq(ref, "raw_records")} WHERE sync_run_id IN UNNEST(@ids) AND (@from IS NULL OR record_date BETWEEN @from AND @to)`,
+        { ids: scope.syncRunIds, from: scope.range?.from ?? null, to: scope.range?.to ?? null },
+        { ids: ["STRING"], from: "DATE", to: "DATE" },
+      );
     }
     const row = r.rows[0] as { f?: string | null; t?: string | null } | undefined;
     return { range: row?.f && row.t ? { from: row.f, to: row.t } : null };
@@ -290,12 +295,14 @@ export class BigQueryWarehouse implements Warehouse {
     const stats: QueryStats = { bytesProcessed: 0, bytesBilled: 0 };
     for (let i = 0; i < rows.length; i += BATCH) {
       const chunk = rows.slice(i, i + BATCH);
-      // MERGE on record_id keeps RAW idempotent when a run is retried.
+      // MERGE on the stable record_id: a re-sync of the same grain replaces the raw row (no second copy).
       const res = await this.run(
         ref,
         `MERGE ${this.fq(ref, "raw_records")} T
          USING (SELECT * FROM UNNEST(@rows)) S
          ON T.record_id = S.record_id AND T.record_date BETWEEN @min_date AND @max_date
+         WHEN MATCHED THEN UPDATE SET sync_run_id = S.sync_run_id, ingested_at = S.ingested_at, payload_json = S.payload_json,
+           is_simulated = S.is_simulated, schema_version = S.schema_version
          WHEN NOT MATCHED THEN INSERT (${Object.keys(RAW_TYPES).join(", ")})
            VALUES (${Object.keys(RAW_TYPES).map((c) => `S.${c}`).join(", ")})`,
         {

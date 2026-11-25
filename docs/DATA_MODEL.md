@@ -78,3 +78,12 @@ denominator are both present contribute. Status values: `ok`, `not_available`, `
 `mixed_currency`. Conversions of different sources (`ad_platform_conversion`, `ga4_key_event`,
 `csv_conversion`) are shown per source and never summed across sources. Simulated rows never enter
 blended totals when real rows exist.
+
+## Raw records: one copy per grain
+
+`raw_records.record_id` is a stable key derived from the row's grain (date, origin, source, account, campaign), the
+sample flag and a duplicate counter, not from the sync run. Writes MERGE on it (update when matched), so re-importing
+the same day replaces the raw row instead of adding a second copy. An API sync also deletes the connector's raw and
+normalized rows for its window before writing, so rows the provider stopped returning disappear. Querying
+`raw_records` directly therefore gives one row per grain and does not double count.
+

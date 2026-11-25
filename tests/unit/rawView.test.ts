@@ -14,3 +14,12 @@ describe("raw data view", () => {
     expect(rawColumns([{ a: "1", b: "2" }, { c: "3", a: "4" }])).toEqual(["a", "b", "c"]);
   });
 });
+
+describe("GA4 catalog", () => {
+  it("marks as loaded exactly the fields the connector requests", async () => {
+    const { GA4_CATALOG } = await import("@/lib/ga4Catalog");
+    const { GA4_DIMENSIONS, GA4_METRICS } = await import("@/lib/rawView");
+    const loaded = GA4_CATALOG.flatMap((g) => g.fields.filter((f) => f.loaded).map((f) => f.name)).sort();
+    expect(loaded).toEqual([...GA4_DIMENSIONS, ...GA4_METRICS].sort());
+  });
+});

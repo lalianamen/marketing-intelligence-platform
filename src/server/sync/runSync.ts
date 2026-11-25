@@ -191,21 +191,21 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
       if (normalized.length !== out.normalized.length) {
         await addIssue(db, run, "warning", "rows_outside_window", "Provider returned rows outside the requested window; they were ignored.");
       }
-      const w = await wh.insertRaw(ref, out.raw);
-      rawCount = w.written;
-    }
-
-    // An API sync is the source of truth for its window: rows the provider no longer
-    // returns (renamed or regrouped campaigns) must not linger and double count.
-    if (connector && window) {
+      // An API sync is the source of truth for its window: rows the provider no longer
+      // returns (renamed or regrouped campaigns) must not linger and double count —
+      // neither in the normalized table nor in the raw table.
+      const runIds = (await db.query<{ id: string }>(`select id from public.sync_runs where connection_id = $1`, [conn.id])).rows.map((r) => r.id);
       await wh.deleteConnectionData(ref, {
         origin: connector.origin,
         isSimulated: conn.mode === "simulated",
         accountId: conn.mode === "live" ? (conn.external_account_id ?? "") : null,
-        syncRunIds: [],
+        syncRunIds: runIds,
         range: window,
       });
+      const w = await wh.insertRaw(ref, out.raw);
+      rawCount = w.written;
     }
+
     const upsert = await wh.upsertNormalized(ref, normalized);
     const dates = normalized.map((r) => r.metric_date).sort();
     const touched = dates.length ? { from: dates[0]!, to: dates[dates.length - 1]! } : null;

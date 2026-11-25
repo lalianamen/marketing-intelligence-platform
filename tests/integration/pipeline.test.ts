@@ -235,6 +235,17 @@ describe("scheduled sync with checkpoints, late arrivals and recovery (simulated
     expect(await runSyncOnce(deps)).toBe("succeeded");
     const after = await wh.queryCampaigns(ref, range, 100);
     expect(after.rows.filter((r) => r.origin === "google_ads").length).toBe(1);
+    // The raw table holds exactly one copy per day and campaign after repeated syncs.
+    const rawPool = (wh as unknown as { pool: { query: (q: string, p?: unknown[]) => Promise<{ rows: { n: number; d: number }[] }> } }).pool;
+    await B.client.rpc("request_sync", { p_connection_id: conn, p_window_start: range.from, p_window_end: range.to });
+    expect(await runSyncOnce(deps)).toBe("succeeded");
+    const rawCounts = (await rawPool.query(
+      `select count(*)::int n, count(distinct record_date)::int d
+         from "${ds.dataset_id}".raw_records where origin = 'google_ads' and record_date between $1 and $2`,
+      [range.from, range.to],
+    )).rows[0]!;
+    expect(rawCounts.n).toBe(3);
+    expect(rawCounts.d).toBe(3);
     // Days outside the window are untouched.
     const outside = await wh.queryCampaigns(ref, { from: "2026-10-06", to: "2026-10-07" }, 100);
     expect(outside.rows.filter((r) => r.origin === "google_ads").length).toBeGreaterThan(1);

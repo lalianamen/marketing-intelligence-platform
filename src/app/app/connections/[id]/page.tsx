@@ -11,6 +11,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
 import { fmtDateTime, fmtInt } from "@/lib/format";
 import { flattenRawPayload, rawColumns } from "@/lib/rawView";
+import { GA4_CATALOG } from "@/lib/ga4Catalog";
 import { deleteConnectionAction, disconnectConnectionAction, syncNowAction, updateScheduleAction } from "../../actions";
 
 const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
@@ -146,6 +147,35 @@ export default async function ConnectionPage({ params, searchParams }: { params:
           </div>
         )}
       </Card>
+
+      {c.provider_id === "ga4" && (
+        <details className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog">
+          <summary className="cursor-pointer text-base font-semibold">What else GA4 can provide</summary>
+          <p className="mt-2 text-xs text-gray-500">
+            Data available from Google Analytics 4. Items marked <Badge tone="green">loaded</Badge> are imported now; the rest can be added on request.
+          </p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {GA4_CATALOG.map((g) => (
+              <section key={g.title} className="rounded-lg border border-gray-100 p-3">
+                <h3 className="text-sm font-semibold text-gray-900">{g.title}</h3>
+                <p className="text-xs text-gray-600">{g.summary}</p>
+                {g.note && <p className="mt-1 text-xs text-amber-800">{g.note}</p>}
+                {g.fields.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-xs">
+                    {g.fields.map((f) => (
+                      <li key={f.name} className="flex gap-2">
+                        <code className="shrink-0 font-mono text-gray-800">{f.name}</code>
+                        <span className="text-gray-600">{f.description}</span>
+                        {f.loaded && <Badge tone="green">loaded</Badge>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ))}
+          </div>
+        </details>
+      )}
 
       <Card title="Raw data">
         <p className="mb-3 text-xs text-gray-500">
