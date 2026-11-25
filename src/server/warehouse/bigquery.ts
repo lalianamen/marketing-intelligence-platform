@@ -83,6 +83,24 @@ const METRIC_UPDATE_COLS = NORM_COLS.filter(
   (c) => !["metric_date", "origin", "source", "account_id", "campaign_id"].includes(c),
 );
 
+/**
+ * The BigQuery client reads DATE/TIME/TIMESTAMP parameter values from `.value`
+ * (it expects BigQuery.date()/timestamp() objects). A plain string would be sent
+ * as NULL, so typed string values are wrapped, recursively through arrays and structs.
+ */
+export function wrapTypedParams(value: unknown, type: unknown): unknown {
+  if (value === null || value === undefined) return value ?? null;
+  if (typeof type === "string") {
+    return typeof value === "string" && /^(DATE|DATETIME|TIME|TIMESTAMP)$/.test(type) ? { value } : value;
+  }
+  if (Array.isArray(type)) return Array.isArray(value) ? value.map((v) => wrapTypedParams(v, type[0])) : value;
+  if (type && typeof type === "object" && typeof value === "object" && !Array.isArray(value)) {
+    const t = type as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, k in t ? wrapTypedParams(v, t[k]) : v]));
+  }
+  return value;
+}
+
 export function schemaDdl(fq: (t: string) => string): string[] {
   return [
     `CREATE TABLE IF NOT EXISTS ${fq("_schema_migrations")} (version INT64 NOT NULL, applied_at TIMESTAMP NOT NULL)`,
@@ -134,7 +152,7 @@ export class BigQueryWarehouse implements Warehouse {
     try {
       const [job] = await this.client.createQueryJob({
         query,
-        params,
+        params: params && types ? (wrapTypedParams(params, types) as Record<string, unknown>) : params,
         types: types as never,
         location: ref.location,
         useLegacySql: false,

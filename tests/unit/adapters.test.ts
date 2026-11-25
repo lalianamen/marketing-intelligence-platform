@@ -168,7 +168,7 @@ describe("BigQuery adapter (mocked SDK)", () => {
     const dates = await wh.coveredDates(ref, "csv", { from: "2026-11-01", to: "2026-11-30" });
     expect(dates).toEqual(["2026-11-01"]);
     const opts = client.createQueryJob.mock.calls[0]![0];
-    expect(opts).toMatchObject({ maximumBytesBilled: "104857600", location: "US", useLegacySql: false, params: { origin: "csv", from: "2026-11-01" } });
+    expect(opts).toMatchObject({ maximumBytesBilled: "104857600", location: "US", useLegacySql: false, params: { origin: "csv", from: { value: "2026-11-01" } } });
     expect(opts.query).toContain("`mip-dev-project.mip_dev_c_abc.norm_campaign_daily`");
     expect(opts.query).toContain("metric_date BETWEEN @from AND @to");
     const daily = await wh.queryDaily(ref, { from: "2026-11-01", to: "2026-11-02" });
@@ -198,5 +198,24 @@ describe("BigQuery adapter (mocked SDK)", () => {
     expect(mapBigQueryError({ code: 503, message: "x" })).toMatchObject({ code: "unavailable", retryable: true });
     expect(mapBigQueryError({ code: 403, errors: [{ reason: "accessDenied" }] })).toMatchObject({ code: "permission_denied", retryable: false });
     expect(mapBigQueryError({ code: 400, errors: [{ reason: "bytesBilledLimitExceeded" }] })).toMatchObject({ code: "bytes_limit_exceeded", retryable: false });
+  });
+});
+
+describe("BigQuery typed parameters", () => {
+  it("DATE and TIMESTAMP strings reach BigQuery as values, not NULL (top level, arrays of structs)", async () => {
+    const { BigQuery } = await import("@google-cloud/bigquery");
+    const { wrapTypedParams } = await import("@/server/warehouse/bigquery");
+    const toParam = (BigQuery as unknown as { valueToQueryParameter_: (v: unknown, t: unknown) => { parameterValue: Record<string, unknown> } }).valueToQueryParameter_;
+    const types = { rows: [{ record_date: "DATE", ingested_at: "TIMESTAMP", origin: "STRING" }], d: "DATE" };
+    const params = { rows: [{ record_date: "2026-11-20", ingested_at: "2026-11-25T03:37:00.000Z", origin: "ga4" }], d: "2026-11-01" };
+    // Unwrapped strings are what broke production: the client sends them as null.
+    expect(toParam(params.d, "DATE").parameterValue.value).toBeUndefined();
+    const w = wrapTypedParams(params, types) as typeof params;
+    expect(toParam(w.d, "DATE").parameterValue.value).toBe("2026-11-01");
+    const arr = toParam(w.rows, types.rows).parameterValue.arrayValues as { structValues: Record<string, { value: unknown }> }[];
+    expect(arr[0]!.structValues.record_date!.value).toBe("2026-11-20");
+    expect(arr[0]!.structValues.ingested_at!.value).toBe("2026-11-25T03:37:00.000Z");
+    expect(arr[0]!.structValues.origin!.value).toBe("ga4");
+    expect(wrapTypedParams({ x: null }, { x: "DATE" })).toEqual({ x: null });
   });
 });
