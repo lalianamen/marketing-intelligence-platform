@@ -10,6 +10,7 @@ import { LoadStatus } from "@/components/LoadStatus";
 import { queuePositions } from "@/server/jobs/queue";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { SubmitButton } from "@/components/SubmitButton";
+import { ScheduleForm } from "@/components/ScheduleForm";
 import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
 import { fmtDateTime, fmtInt } from "@/lib/format";
 import { parseRawTableParams, rawTableQuery, valueAt } from "@/lib/rawTable";
@@ -115,7 +116,6 @@ export default async function ConnectionPage({ params, searchParams }: { params:
         )}
       </div>
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
-      {sp.saved && <Notice tone="green">Saved.</Notice>}
       {sp.queued && <Notice tone="green">Update requested.</Notice>}
       {sp.restarted && <Notice tone="green">The tables were deleted and loading started again with the new set of data: {sp.rfrom} → {sp.rto}, {sp.restarted} part{sp.restarted === "1" ? "" : "s"}.</Notice>}
       {sp.started && <Notice tone="green">Loading started in {sp.started} part{sp.started === "1" ? "" : "s"} of up to one month. Automatic updates are on as chosen.</Notice>}
@@ -261,32 +261,31 @@ export default async function ConnectionPage({ params, searchParams }: { params:
           {c.status === "expired" && canManage && <div className="mt-3"><LinkButton href="/app/connections/new">Reconnect</LinkButton></div>}
         </Card>
 
-        <Card title="Automatic updates" className="lg:col-span-2">
+        <div id="schedule" className="lg:col-span-2">
+        <Card title="Automatic updates">
           {c.mode === "manual" || !c.schedule ? (
             <p className="text-sm text-gray-600">CSV files are uploaded by hand, so there is no schedule. Re-uploading replaces numbers for the same day, source and campaign.</p>
           ) : canManage ? (
-            <form action={updateScheduleAction} className="space-y-3" data-testid="schedule-form">
-              <input type="hidden" name="connection_id" value={c.id} />
-              <fieldset className="flex flex-wrap gap-4 text-sm">
-                <label className="flex items-center gap-2"><input type="radio" name="frequency" value="daily" defaultChecked={c.schedule.frequency === "daily"} /> Every day at</label>
-                <input type="time" name="local_time" defaultValue={c.schedule.local_time} required className="rounded-lg border border-gray-300 px-2 py-1 text-sm" />
-                <span className="self-center text-gray-500">{c.schedule.timezone}</span>
-              </fieldset>
-              <label className="flex items-center gap-2 text-sm"><input type="radio" name="frequency" value="manual" defaultChecked={c.schedule.frequency === "manual"} /> Only when I press “Update now”</label>
-              <p className="text-xs text-gray-500">
-                {c.schedule.frequency === "daily" && c.schedule.next_run_at
+            <ScheduleForm
+              key={`${c.schedule.frequency}-${c.schedule.local_time}`}
+              action={updateScheduleAction}
+              connectionId={c.id}
+              saved={{ frequency: c.schedule.frequency, localTime: c.schedule.local_time }}
+              timezone={c.schedule.timezone}
+              justSaved={Boolean(sp.saved)}
+              nextRunText={
+                c.schedule.frequency === "daily" && c.schedule.next_run_at
                   ? new Date(c.schedule.next_run_at).getTime() <= Date.now()
-                    ? "Next automatic update: due now — it starts within a minute or two."
-                    : `Next automatic update: about ${fmtDateTime(c.schedule.next_run_at, tz)} (the scheduler checks every minute; a few minutes of spread are added so not all sources hit Google at once).`
-                  : "Automatic updates are off."}
-                {" "}Each update re-reads the recent days, because platforms keep adjusting them for a while.
-              </p>
-              <SubmitButton pendingText="Saving…">Save</SubmitButton>
-            </form>
+                    ? "Next update: due now — it starts within a minute or two."
+                    : `Next update: about ${fmtDateTime(c.schedule.next_run_at, tz)}.`
+                  : "Automatic updates are off."
+              }
+            />
           ) : (
             <p className="text-sm text-gray-600">{c.schedule.frequency === "daily" ? `Every day at ${c.schedule.local_time} (${c.schedule.timezone}).` : "Only manual updates."}</p>
           )}
         </Card>
+        </div>
       </div>
 
       {canManage && c.mode !== "manual" && (

@@ -182,6 +182,12 @@ try {
   await page.locator('[data-testid="schedule-form"] button:has-text("Save")').click();
   await page.waitForURL(/saved=1/);
   assert.equal(await page.locator('[data-testid="schedule-form"] input[name="local_time"]').inputValue(), "09:30");
+  await page.getByTestId("schedule-saved").waitFor();
+  assert.match(await page.getByTestId("schedule-current").innerText(), /every day at 9:30 AM/);
+  assert.ok(await page.locator('[data-testid="schedule-form"] button:has-text("Save")').isDisabled(), "nothing to save after saving");
+  await page.locator('[data-testid="schedule-form"] input[name="local_time"]').fill("10:15");
+  await page.getByTestId("schedule-unsaved").waitFor();
+  await page.locator('[data-testid="schedule-form"] input[name="local_time"]').fill("09:30");
   await page.click('[data-testid="raw-filters"] a:has-text("All")');
   await page.waitForURL(/period=all/);
   const allRows = await page.getByTestId("raw-total").innerText();

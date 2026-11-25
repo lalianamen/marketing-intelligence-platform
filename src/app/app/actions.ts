@@ -265,7 +265,7 @@ export async function updateScheduleAction(form: FormData): Promise<void> {
     const m = (err as Error).message;
     redirect(`/app/connections/${id}?error=` + encodeURIComponent(/invalid time/.test(m) ? "Please choose a valid time." : friendly(m)));
   }
-  redirect(`/app/connections/${id}?saved=1`);
+  redirect(`/app/connections/${id}?saved=1#schedule`);
 }
 
 export async function disconnectConnectionAction(form: FormData): Promise<void> {
