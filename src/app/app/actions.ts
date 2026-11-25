@@ -431,15 +431,19 @@ export async function connectClarityAction(form: FormData): Promise<void> {
   if (access !== "manage") back("Not found, or you do not have access.");
   const { fetchClarityInsights } = await import("@/server/connectors/clarity");
   try {
-    await fetchClarityInsights(fetch, token, []);
+    // Same request shape as Microsoft's example (one breakdown).
+    await fetchClarityInsights(fetch, token, ["os"]);
   } catch (err) {
     const code = (err as { code?: string }).code;
+    console.error(JSON.stringify({ level: "warn", msg: "clarity.connect_check_failed", code, error: String((err as Error).message).slice(0, 300) }));
     back(
       code === "auth_expired"
         ? "Clarity did not accept this token. Check that it was copied completely and belongs to this project."
         : code === "quota_exceeded"
         ? "Clarity's limit of 10 requests a day for this project is used up. Please try again tomorrow."
-        : "Could not reach Clarity. Please try again in a minute.",
+        : code === "timeout"
+        ? "Clarity did not answer in time. Please try again in a minute."
+        : `Clarity did not accept the request (${String((err as Error).message).replace(/^clarity: /, "").slice(0, 120)}). Please try again; if it repeats, send this message to support.`,
     );
   }
   const ws = (await db.query<{ workspace_id: string }>(`select workspace_id from public.companies where id = $1`, [companyId])).rows[0]!.workspace_id;

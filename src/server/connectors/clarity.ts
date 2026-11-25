@@ -33,8 +33,13 @@ export async function fetchClarityInsights(f: FetchLike, token: string, dimensio
   if (res.status === 429) throw new ConnectorError("quota_exceeded", "clarity: the daily limit of 10 requests for this project is used up; it resets tomorrow");
   if (res.status === 401 || res.status === 403) throw new ConnectorError("auth_expired", "clarity: the API token is invalid, expired or was removed");
   if (!res.ok) throw connectorErrorFromHttp(res.status, body, "clarity");
-  const json = body ? JSON.parse(body) : [];
-  if (!Array.isArray(json)) throw new ConnectorError("invalid_request", "clarity: unexpected answer");
+  let json: unknown;
+  try {
+    json = body ? JSON.parse(body) : [];
+  } catch {
+    throw new ConnectorError("invalid_request", `clarity: unexpected answer (${res.status}, not JSON)`);
+  }
+  if (!Array.isArray(json)) throw new ConnectorError("invalid_request", `clarity: unexpected answer (${res.status}: ${body.slice(0, 80)})`);
   return json as InsightBlock[];
 }
 
