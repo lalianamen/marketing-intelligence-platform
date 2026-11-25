@@ -54,6 +54,26 @@ describe("GA4 connector (mocked HTTP)", () => {
     ]);
   });
 
+  it("runs extra reports the user switched on; a failing one is reported, not fatal", async () => {
+    const core = json(200, { rowCount: 1, metadata: {}, rows: [{ dimensionValues: [{ value: "20261101" }, { value: "7" }, { value: "Spring" }], metricValues: [{ value: "10" }, { value: "1" }, { value: "0" }] }] });
+    const traffic = json(200, {
+      rowCount: 1,
+      rows: [{ dimensionValues: [{ value: "20261101" }, { value: "google" }, { value: "organic" }, { value: "Organic Search" }], metricValues: ["9", "6", "8", "5", "1", "0"].map((value) => ({ value })) }],
+    });
+    const adsFails = json(400, { error: { message: "advertiserAdCost requires a Google Ads link" } });
+    const f = vi.fn().mockResolvedValueOnce(tokenOk.clone()).mockResolvedValueOnce(core).mockResolvedValueOnce(traffic).mockResolvedValueOnce(adsFails);
+    const c = new Ga4Connector({ clientId: "id", clientSecret: "s", fetch: f });
+    const out = await c.fetchDaily({ ...ctx, externalAccountId: "123456", options: { ga4Reports: ["google_ads", "traffic_sources", "bogus"] } });
+    expect(out.records).toHaveLength(1);
+    expect(out.extraFetched).toEqual(["traffic_sources"]);
+    expect(out.extraRaw).toEqual([
+      expect.objectContaining({ source: "ga4:traffic_sources", date: "2026-11-01", payload: expect.objectContaining({ sessionSource: "google", sessionMedium: "organic", sessions: "9", totalRevenue: "0" }) }),
+    ]);
+    expect(out.extraErrors).toEqual([expect.objectContaining({ report: "google_ads" })]);
+    const trafficBody = JSON.parse((f.mock.calls[2]![1] as RequestInit).body as string);
+    expect(trafficBody.dimensions.map((d: { name: string }) => d.name)).toEqual(["date", "sessionSource", "sessionMedium", "sessionDefaultChannelGroup"]);
+  });
+
   it("expired refresh token → auth_expired (not retryable)", async () => {
     const f = vi.fn().mockResolvedValue(json(400, { error: "invalid_grant" }));
     const c = new Ga4Connector({ clientId: "id", clientSecret: "s", fetch: f });

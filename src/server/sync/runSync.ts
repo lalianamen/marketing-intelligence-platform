@@ -7,7 +7,7 @@ import { connectorFor } from "../connectors/factory";
 import type { FetchLike } from "../connectors/google";
 import { type Connector, ConnectorError } from "../connectors/types";
 import type { CsvRow } from "../ingestion/csv";
-import { normalizeCsvRows, normalizeProviderRecords } from "../ingestion/normalize";
+import { extraRawRecords, normalizeCsvRows, normalizeProviderRecords } from "../ingestion/normalize";
 import type { ClaimedJob } from "../jobs/queue";
 import { getResourceForCompany, toDatasetRef } from "../registry/registry";
 import { recordUsage } from "../usage/usage";
@@ -95,6 +95,7 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
       status: string;
       external_account_id: string | null;
       data_as_of: string | null;
+      settings: { ga4_reports?: string[] } | null;
     }>(`select * from public.company_connections where id = $1 and company_id = $2`, [run.connection_id, run.company_id])
   ).rows[0];
   if (!conn) throw new SyncError("connection_missing", "connection not found", false);
@@ -173,12 +174,16 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
         companyTimezone: company.timezone,
         credentials,
         now,
+        options: { ga4Reports: conn.settings?.ga4_reports ?? [] },
       });
       apiCalls = fetched.apiCalls;
       if (!fetched.complete) {
         throw new ConnectorError("incomplete_data", `provider returned an incomplete result: ${fetched.notes.join(" ")}`);
       }
       for (const note of fetched.notes) await addIssue(db, run, "info", "provider_note", note);
+      for (const e of fetched.extraErrors ?? []) {
+        await addIssue(db, run, "warning", "extra_report_failed", `Extra GA4 report "${e.report}" was not loaded: ${redact(e.message)}`, { report: e.report });
+      }
       const out = normalizeProviderRecords(fetched.records, {
         syncRunId: run.id,
         origin: connector.origin,
@@ -195,14 +200,25 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
       // returns (renamed or regrouped campaigns) must not linger and double count —
       // neither in the normalized table nor in the raw table.
       const runIds = (await db.query<{ id: string }>(`select id from public.sync_runs where connection_id = $1`, [conn.id])).rows.map((r) => r.id);
+      // Raw rows are replaced only for the reports fetched completely in this run; a failed
+      // extra report keeps its previous rows rather than losing them.
       await wh.deleteConnectionData(ref, {
         origin: connector.origin,
         isSimulated: conn.mode === "simulated",
         accountId: conn.mode === "live" ? (conn.external_account_id ?? "") : null,
         syncRunIds: runIds,
         range: window,
+        rawSources: [connector.origin, ...(fetched.extraFetched ?? []).map((id) => `${connector!.origin}:${id}`)],
       });
-      const w = await wh.insertRaw(ref, out.raw);
+      const extra = extraRawRecords(fetched.extraRaw ?? [], {
+        syncRunId: run.id,
+        origin: connector.origin,
+        accountId: conn.external_account_id ?? "",
+        isSimulated: connector.mode === "simulated",
+        now,
+        window,
+      });
+      const w = await wh.insertRaw(ref, [...out.raw, ...extra]);
       rawCount = w.written;
     }
 

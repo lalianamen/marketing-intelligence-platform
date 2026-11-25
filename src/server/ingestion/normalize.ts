@@ -1,6 +1,6 @@
 import { addDays } from "../../lib/dates";
 import type { DataStatus, NormalizedRow, Origin, RawRecord } from "../../lib/model";
-import type { ProviderDailyRecord } from "../connectors/types";
+import type { ExtraRawRecord, ProviderDailyRecord } from "../connectors/types";
 import { sha256Hex } from "../crypto";
 import type { CsvRow } from "./csv";
 
@@ -132,4 +132,32 @@ export function normalizeProviderRecords(
     });
   }
   return { normalized: [...byKey.values()], raw };
+}
+
+/** Rows of extra reports go to the RAW layer only, keyed by report, account, day and dimension values. */
+export function extraRawRecords(
+  rows: ExtraRawRecord[],
+  ctx: { syncRunId: string; origin: Origin; accountId: string; isSimulated: boolean; now: Date; window: { from: string; to: string } },
+): RawRecord[] {
+  const ingested = ctx.now.toISOString();
+  const seen = new Map<string, number>();
+  const out: RawRecord[] = [];
+  for (const r of rows) {
+    if (r.date < ctx.window.from || r.date > ctx.window.to) continue;
+    const grain = `${r.source}\u001f${ctx.accountId}\u001f${r.date}\u001f${r.key}`;
+    const n = seen.get(grain) ?? 0;
+    seen.set(grain, n + 1);
+    out.push({
+      record_id: rawRecordId(sha256Hex(grain), ctx.isSimulated, n),
+      sync_run_id: ctx.syncRunId,
+      origin: ctx.origin,
+      source: r.source,
+      record_date: r.date,
+      ingested_at: ingested,
+      payload_json: JSON.stringify(r.payload),
+      is_simulated: ctx.isSimulated,
+      schema_version: NORMALIZATION_VERSION,
+    });
+  }
+  return out;
 }

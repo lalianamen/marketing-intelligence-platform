@@ -1,6 +1,7 @@
 import { GA4_SCOPE, type FetchLike, postJson, refreshAccessToken } from "./google";
 import { GA4_DIMENSIONS, GA4_METRICS } from "../../lib/rawView";
-import { type Connector, ConnectorError, type FetchContext, type FetchResult, type ProviderDailyRecord } from "./types";
+import { ga4ReportById, sanitizeGa4Reports } from "../../lib/ga4Catalog";
+import { type Connector, ConnectorError, type ExtraRawRecord, type FetchContext, type FetchResult, type ProviderDailyRecord } from "./types";
 
 // GA4 LIVE connector — Google Analytics Data API v1beta `runReport`.
 // MVP pathway: daily REPORT metrics per session campaign (not raw events).
@@ -106,6 +107,69 @@ export class Ga4Connector implements Connector {
       }
     }
     if (records.length < total && Number.isFinite(total)) complete = false;
-    return { records, apiCalls, complete, notes };
+
+    // Extra reports the user switched on. Each one is independent: a failure (e.g. Google Ads
+    // not linked, quota) is reported and skipped, so the dashboard data still arrives.
+    const extraRaw: ExtraRawRecord[] = [];
+    const extraErrors: { report: string; message: string }[] = [];
+    const extraFetched: string[] = [];
+    for (const id of sanitizeGa4Reports(ctx.options?.ga4Reports)) {
+      const report = ga4ReportById(id)!;
+      try {
+        const out = await this.runExtraReport(f, accessToken, ctx, report.id, report.dimensions.map((d) => d.name), report.metrics.map((m) => m.name));
+        apiCalls += out.calls;
+        if (out.complete) extraFetched.push(report.id);
+        else extraErrors.push({ report: report.id, message: "row limit reached; the report may be incomplete" });
+        extraRaw.push(...out.rows);
+      } catch (err) {
+        if (err instanceof ConnectorError && err.code === "auth_expired") throw err;
+        extraErrors.push({ report: report.id, message: (err as Error).message.slice(0, 300) });
+      }
+    }
+    return { records, apiCalls, complete, notes, extraRaw, extraErrors, extraFetched };
+  }
+
+  private async runExtraReport(
+    f: FetchLike,
+    accessToken: string,
+    ctx: FetchContext,
+    id: string,
+    dimensions: string[],
+    metrics: string[],
+  ): Promise<{ rows: ExtraRawRecord[]; calls: number; complete: boolean }> {
+    const rows: ExtraRawRecord[] = [];
+    let offset = 0;
+    let total = Infinity;
+    let calls = 0;
+    while (offset < total) {
+      const { json, calls: c } = await postJson(
+        f,
+        `https://analyticsdata.googleapis.com/v1beta/properties/${ctx.externalAccountId}:runReport`,
+        { authorization: `Bearer ${accessToken}` },
+        {
+          dateRanges: [{ startDate: ctx.window.from, endDate: ctx.window.to }],
+          dimensions: dimensions.map((name) => ({ name })),
+          metrics: metrics.map((name) => ({ name })),
+          limit: PAGE_SIZE,
+          offset,
+          keepEmptyRows: false,
+        },
+        "ga4",
+      );
+      calls += c;
+      const body = json as Ga4Response;
+      total = body.rowCount ?? 0;
+      for (const row of body.rows ?? []) {
+        const payload: Record<string, string> = {};
+        dimensions.forEach((d, i) => (payload[d] = row.dimensionValues[i]?.value ?? ""));
+        metrics.forEach((m, i) => (payload[m] = row.metricValues[i]?.value ?? ""));
+        rows.push({ source: `ga4:${id}`, date: ga4Date(payload.date!), key: dimensions.slice(1).map((d) => payload[d]).join("\u001f"), payload });
+      }
+      const got = body.rows?.length ?? 0;
+      if (got === 0) break;
+      offset += got;
+      if (calls > 20) return { rows, calls, complete: false };
+    }
+    return { rows, calls, complete: rows.length >= total || !Number.isFinite(total) };
   }
 }

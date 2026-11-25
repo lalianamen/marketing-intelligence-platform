@@ -212,7 +212,7 @@ export class BigQueryWarehouse implements Warehouse {
     }
   }
 
-  async queryRaw(ref: DatasetRef, syncRunIds: string[], limit: number): Promise<{ rows: RawRecord[]; stats: QueryStats }> {
+  async queryRaw(ref: DatasetRef, syncRunIds: string[], limit: number, source?: string): Promise<{ rows: RawRecord[]; stats: QueryStats }> {
     if (syncRunIds.length === 0) return { rows: [], stats: { bytesProcessed: null, bytesBilled: null } };
     const res = await this.run(
       ref,
@@ -220,36 +220,41 @@ export class BigQueryWarehouse implements Warehouse {
          FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', ingested_at) AS ingested_at, payload_json, is_simulated, schema_version
        FROM ${this.fq(ref, "raw_records")}
        WHERE sync_run_id IN UNNEST(@ids) AND record_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 400 DAY)
+         AND (@src IS NULL OR source = @src)
        QUALIFY ROW_NUMBER() OVER (PARTITION BY record_date, source, payload_json ORDER BY ingested_at DESC) = 1
        ORDER BY record_date DESC, source, ingested_at DESC
        LIMIT @lim`,
-      { ids: syncRunIds, lim: Math.min(Math.max(limit, 1), 2000) },
-      { ids: ["STRING"], lim: "INT64" },
+      { ids: syncRunIds, lim: Math.min(Math.max(limit, 1), 2000), src: source ?? null },
+      { ids: ["STRING"], lim: "INT64", src: "STRING" },
     );
     return { rows: res.rows as unknown as RawRecord[], stats: res.stats };
   }
 
   async deleteConnectionData(
     ref: DatasetRef,
-    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[]; range?: DateRange },
+    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[]; range?: DateRange; rawSources?: string[]; skipNormalized?: boolean },
   ): Promise<{ range: DateRange | null }> {
     const where = `origin = @origin AND is_simulated = @sim AND (@acct IS NULL OR account_id = @acct)
       AND (@from IS NULL OR metric_date BETWEEN @from AND @to)`;
     const params = { origin: scope.origin, sim: scope.isSimulated, acct: scope.accountId, from: scope.range?.from ?? null, to: scope.range?.to ?? null };
     const types = { origin: "STRING", sim: "BOOL", acct: "STRING", from: "DATE", to: "DATE" };
-    const r = await this.run(
-      ref,
-      `SELECT CAST(MIN(metric_date) AS STRING) AS f, CAST(MAX(metric_date) AS STRING) AS t FROM ${this.fq(ref, "norm_campaign_daily")} WHERE ${where}`,
-      params,
-      types,
-    );
-    await this.run(ref, `DELETE FROM ${this.fq(ref, "norm_campaign_daily")} WHERE ${where}`, params, types);
+    let r: { rows: Record<string, unknown>[] } = { rows: [] };
+    if (!scope.skipNormalized) {
+      r = await this.run(
+        ref,
+        `SELECT CAST(MIN(metric_date) AS STRING) AS f, CAST(MAX(metric_date) AS STRING) AS t FROM ${this.fq(ref, "norm_campaign_daily")} WHERE ${where}`,
+        params,
+        types,
+      );
+      await this.run(ref, `DELETE FROM ${this.fq(ref, "norm_campaign_daily")} WHERE ${where}`, params, types);
+    }
     if (scope.syncRunIds.length) {
       await this.run(
         ref,
-        `DELETE FROM ${this.fq(ref, "raw_records")} WHERE sync_run_id IN UNNEST(@ids) AND (@from IS NULL OR record_date BETWEEN @from AND @to)`,
-        { ids: scope.syncRunIds, from: scope.range?.from ?? null, to: scope.range?.to ?? null },
-        { ids: ["STRING"], from: "DATE", to: "DATE" },
+        `DELETE FROM ${this.fq(ref, "raw_records")} WHERE sync_run_id IN UNNEST(@ids) AND (@from IS NULL OR record_date BETWEEN @from AND @to)
+           AND (@all_src OR source IN UNNEST(@srcs))`,
+        { ids: scope.syncRunIds, from: scope.range?.from ?? null, to: scope.range?.to ?? null, all_src: !scope.rawSources, srcs: scope.rawSources ?? [] },
+        { ids: ["STRING"], from: "DATE", to: "DATE", all_src: "BOOL", srcs: ["STRING"] },
       );
     }
     const row = r.rows[0] as { f?: string | null; t?: string | null } | undefined;

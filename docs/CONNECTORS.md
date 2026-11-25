@@ -114,6 +114,18 @@ Google user can read and connects it:
   for live connectors, account; its raw rows by sync run), rebuilds the mart for the affected days, then deletes runs,
   schedule and token. Refused while an update is running.
 
+## Switchable GA4 reports
+
+- Catalog: `src/lib/ga4Catalog.ts` (one source of truth for field names and descriptions). The "core" report
+  (date, campaign id/name, sessions, key events, total revenue) feeds normalized rows and the dashboard; always on.
+- Every other report is switched on/off per connector on the connector page (`company_connections.settings.ga4_reports`,
+  written by the server after an access check). Each is a separate GA4 `runReport` (date + its dimensions, ≤ 9
+  dimensions, ≤ 10 metrics) stored only in `raw_records` with `source = 'ga4:<report>'`, never in dashboard totals.
+- On: the last 30 complete days are requested right away. Off: the report's raw rows are deleted.
+- A failing extra report (e.g. Google Ads not linked, quota) is recorded as a data-quality warning; the core import
+  still succeeds and that report's previous rows are kept (raw rows are replaced only for reports fetched completely).
+- Planned: plan tiers will mark reports as basic or extended; switching is then checked against the workspace plan.
+
 ## Future connectors: design notes, no access promised
 
 | Provider | Notes |

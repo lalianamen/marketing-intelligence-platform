@@ -1,8 +1,11 @@
 // Turns stored raw provider payloads into flat, labelled table rows for display.
 
-/** GA4 report columns the connector requests, in order; raw records keep values in this order. */
-export const GA4_DIMENSIONS = ["date", "sessionCampaignId", "sessionCampaignName"] as const;
-export const GA4_METRICS = ["sessions", "keyEvents", "totalRevenue"] as const;
+import { GA4_REPORTS } from "./ga4Catalog";
+
+const CORE = GA4_REPORTS.find((r) => r.core)!;
+/** GA4 core report columns the connector requests, in order; raw records keep values in this order. */
+export const GA4_DIMENSIONS = CORE.dimensions.map((d) => d.name);
+export const GA4_METRICS = CORE.metrics.map((m) => m.name);
 
 function flatten(value: unknown, prefix: string, out: Record<string, string>): void {
   if (value === null || value === undefined) {

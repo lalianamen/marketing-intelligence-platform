@@ -16,7 +16,8 @@ import { getCompanyAccess } from "@/server/auth/authz";
 import { decryptSecret } from "@/server/crypto";
 import { withTransaction } from "@/server/db";
 import { createLiveConnection, type GoogleProvider } from "@/server/oauth/connect";
-import { deleteConnection, updateSchedule } from "@/server/connections/manage";
+import { deleteConnection, setGa4Report, updateSchedule } from "@/server/connections/manage";
+import { localDate, addDays } from "@/lib/dates";
 import { getWarehouse } from "@/server/warehouse";
 import type { DiscoveredAccount } from "@/server/connectors/google";
 
@@ -288,4 +289,27 @@ export async function deleteConnectionAction(form: FormData): Promise<void> {
   }
   revalidatePath("/app", "layout");
   redirect("/app/connections?deleted=" + encodeURIComponent(name));
+}
+
+export async function toggleGa4ReportAction(form: FormData): Promise<void> {
+  const { supabase, user } = await requireUser();
+  const id = String(form.get("connection_id") ?? "");
+  const report = String(form.get("report") ?? "");
+  const on = String(form.get("on") ?? "") === "true";
+  const cfg = loadConfig();
+  let backfill = false;
+  try {
+    ({ backfill } = await setGa4Report(getPool(), (p) => getWarehouse(p, cfg), user.id, id, report, on));
+  } catch (err) {
+    redirect(`/app/connections/${id}?error=` + encodeURIComponent(friendly((err as Error).message)) + "#ga4-reports");
+  }
+  if (backfill) {
+    // Load the last 30 complete days of the newly enabled report right away.
+    const { data: comp } = await supabase.from("company_connections").select("companies(timezone)").eq("id", id).maybeSingle();
+    const tz = (comp?.companies as unknown as { timezone?: string } | null)?.timezone ?? "UTC";
+    const to = addDays(localDate(new Date(), tz), -1);
+    await supabase.rpc("request_sync", { p_connection_id: id, p_window_start: addDays(to, -(cfg.initialBackfillDays - 1)), p_window_end: to });
+    kickJobs();
+  }
+  redirect(`/app/connections/${id}?report=${on ? report : "core"}` + (on ? "&enabled=1" : "&disabled=1") + "#ga4-reports");
 }

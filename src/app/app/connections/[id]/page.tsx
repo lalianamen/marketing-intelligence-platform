@@ -11,13 +11,13 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
 import { fmtDateTime, fmtInt } from "@/lib/format";
 import { flattenRawPayload, rawColumns } from "@/lib/rawView";
-import { GA4_CATALOG } from "@/lib/ga4Catalog";
-import { deleteConnectionAction, disconnectConnectionAction, syncNowAction, updateScheduleAction } from "../../actions";
+import { GA4_REPORTS, ga4ReportById, sanitizeGa4Reports } from "@/lib/ga4Catalog";
+import { deleteConnectionAction, disconnectConnectionAction, syncNowAction, toggleGa4ReportAction, updateScheduleAction } from "../../actions";
 
 const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
 const RAW_LIMIT = 500;
 
-export default async function ConnectionPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string; error?: string; queued?: string }> }) {
+export default async function ConnectionPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string; error?: string; queued?: string; report?: string; enabled?: string; disabled?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
   const ctx = await getCompanyContext();
@@ -26,7 +26,11 @@ export default async function ConnectionPage({ params, searchParams }: { params:
   if (!c || c.company_id !== ctx.company.id) notFound();
   const tz = ctx.company.timezone;
   const cfg = loadConfig();
-  const [runs, raw] = await Promise.all([loadRuns(db, c.id), loadRawRows(db, (p) => getWarehouse(p, cfg), ctx.userId, c.id, RAW_LIMIT)]);
+  const isGa4Live = c.provider_id === "ga4" && c.mode === "live";
+  const enabledReports = isGa4Live ? sanitizeGa4Reports(c.settings?.ga4_reports) : [];
+  const shownReport = isGa4Live && sp.report && enabledReports.includes(sp.report) ? sp.report : "core";
+  const rawSource = isGa4Live ? (shownReport === "core" ? "ga4" : `ga4:${shownReport}`) : undefined;
+  const [runs, raw] = await Promise.all([loadRuns(db, c.id), loadRawRows(db, (p) => getWarehouse(p, cfg), ctx.userId, c.id, RAW_LIMIT, rawSource)]);
   const flat = raw.rows.map((r) => ({ r, cells: flattenRawPayload(r.origin, r.payload_json) }));
   const cols = rawColumns(flat.map((f) => f.cells));
   const b = modeBadge(c.mode);
@@ -148,37 +152,80 @@ export default async function ConnectionPage({ params, searchParams }: { params:
         )}
       </Card>
 
-      {c.provider_id === "ga4" && (
-        <details className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog">
-          <summary className="cursor-pointer text-base font-semibold">What else GA4 can provide</summary>
+      {isGa4Live && (
+        <details id="ga4-reports" className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog" open={Boolean(sp.enabled || sp.disabled || sp.report)}>
+          <summary className="cursor-pointer text-base font-semibold">What else GA4 can provide <span className="ml-2 text-sm font-normal text-gray-500">{enabledReports.length} extra report{enabledReports.length === 1 ? "" : "s"} on</span></summary>
           <p className="mt-2 text-xs text-gray-500">
-            Data available from Google Analytics 4. Items marked <Badge tone="green">loaded</Badge> are imported now; the rest can be added on request.
+            Switch on what you want to collect. Each report is loaded with every update and kept in BigQuery as raw data; switching one on loads the last 30 days right away, switching it off stops it and deletes its data. Dashboard totals always come from the first report only.
           </p>
+          {sp.enabled && <div className="mt-3"><Notice tone="green">Report switched on. The last 30 days are loading — they appear in Raw data in a minute.</Notice></div>}
+          {sp.disabled && <div className="mt-3"><Notice tone="blue">Report switched off and its data deleted.</Notice></div>}
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {GA4_CATALOG.map((g) => (
-              <section key={g.title} className="rounded-lg border border-gray-100 p-3">
-                <h3 className="text-sm font-semibold text-gray-900">{g.title}</h3>
-                <p className="text-xs text-gray-600">{g.summary}</p>
-                {g.note && <p className="mt-1 text-xs text-amber-800">{g.note}</p>}
-                {g.fields.length > 0 && (
-                  <ul className="mt-2 space-y-1 text-xs">
-                    {g.fields.map((f) => (
-                      <li key={f.name} className="flex gap-2">
-                        <code className="shrink-0 font-mono text-gray-800">{f.name}</code>
-                        <span className="text-gray-600">{f.description}</span>
-                        {f.loaded && <Badge tone="green">loaded</Badge>}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            ))}
+            {GA4_REPORTS.map((g) => {
+              const on = g.core || enabledReports.includes(g.id);
+              return (
+                <section key={g.id} className={`rounded-lg border p-3 ${on && !g.unavailable ? "border-green-200 bg-green-50/40" : "border-gray-100"}`} data-testid={`ga4-report-${g.id}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">{g.title}</h3>
+                      <p className="text-xs text-gray-600">{g.summary}</p>
+                    </div>
+                    {g.core ? (
+                      <Badge tone="green">always on</Badge>
+                    ) : g.unavailable ? (
+                      <Badge tone="gray">not via API</Badge>
+                    ) : canManage ? (
+                      <form action={toggleGa4ReportAction}>
+                        <input type="hidden" name="connection_id" value={c.id} />
+                        <input type="hidden" name="report" value={g.id} />
+                        <input type="hidden" name="on" value={on ? "false" : "true"} />
+                        <button
+                          aria-pressed={on}
+                          aria-label={`${on ? "Turn off" : "Turn on"} ${g.title}`}
+                          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-green-600" : "bg-gray-300"}`}
+                        >
+                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${on ? "translate-x-5" : "translate-x-0.5"}`} />
+                        </button>
+                        <span className="sr-only">{on ? "On" : "Off"}</span>
+                      </form>
+                    ) : (
+                      <Badge tone={on ? "green" : "gray"}>{on ? "on" : "off"}</Badge>
+                    )}
+                  </div>
+                  {g.note && <p className="mt-1 text-xs text-amber-800">{g.note}</p>}
+                  {g.dimensions.length + g.metrics.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-xs">
+                      {[...g.dimensions, ...g.metrics].map((f) => (
+                        <li key={f.name} className="flex gap-2">
+                          <code className="shrink-0 font-mono text-gray-800">{f.name}</code>
+                          <span className="text-gray-600">{f.description}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              );
+            })}
           </div>
         </details>
       )}
 
       <Card title="Raw data">
-        <p className="mb-3 text-xs text-gray-500">
+        {isGa4Live && enabledReports.length > 0 && (
+          <nav aria-label="Report" className="mb-3 flex flex-wrap gap-1" data-testid="raw-report-tabs">
+            {["core", ...enabledReports].map((id) => (
+              <a
+                key={id}
+                href={`/app/connections/${c.id}?report=${id}#raw`}
+                aria-current={id === shownReport ? "page" : undefined}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium ring-1 ${id === shownReport ? "bg-brand-50 text-brand-700 ring-brand-200" : "text-gray-700 ring-gray-200 hover:bg-gray-50"}`}
+              >
+                {ga4ReportById(id)?.title ?? id}
+              </a>
+            ))}
+          </nav>
+        )}
+        <p id="raw" className="mb-3 text-xs text-gray-500">
           Exactly what {name} returned, before any calculation. Newest days first; identical rows from repeated updates are shown once.
           {raw.rows.length >= RAW_LIMIT ? ` Showing the latest ${RAW_LIMIT} rows.` : ""}
         </p>

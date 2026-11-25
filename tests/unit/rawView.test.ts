@@ -16,10 +16,18 @@ describe("raw data view", () => {
 });
 
 describe("GA4 catalog", () => {
-  it("marks as loaded exactly the fields the connector requests", async () => {
-    const { GA4_CATALOG } = await import("@/lib/ga4Catalog");
+  it("core report is what the connector requests; every switchable report fits GA4 limits", async () => {
+    const { GA4_REPORTS, GA4_OPTIONAL_REPORTS, sanitizeGa4Reports } = await import("@/lib/ga4Catalog");
     const { GA4_DIMENSIONS, GA4_METRICS } = await import("@/lib/rawView");
-    const loaded = GA4_CATALOG.flatMap((g) => g.fields.filter((f) => f.loaded).map((f) => f.name)).sort();
-    expect(loaded).toEqual([...GA4_DIMENSIONS, ...GA4_METRICS].sort());
+    const core = GA4_REPORTS.find((r) => r.core)!;
+    expect(core.dimensions.map((d) => d.name)).toEqual([...GA4_DIMENSIONS]);
+    expect(core.metrics.map((m) => m.name)).toEqual([...GA4_METRICS]);
+    for (const r of GA4_OPTIONAL_REPORTS) {
+      expect(r.dimensions[0]!.name).toBe("date");
+      expect(r.dimensions.length).toBeLessThanOrEqual(9); // GA4 runReport limit
+      expect(r.metrics.length).toBeGreaterThan(0);
+      expect(r.metrics.length).toBeLessThanOrEqual(10);
+    }
+    expect(sanitizeGa4Reports(["geo", "core", "nope", "raw_events", "traffic_sources"])).toEqual(["traffic_sources", "geo"]);
   });
 });

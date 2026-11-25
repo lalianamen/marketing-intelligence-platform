@@ -111,7 +111,7 @@ export class LocalWarehouse implements Warehouse {
     }
   }
 
-  async queryRaw(ref: DatasetRef, syncRunIds: string[], limit: number): Promise<{ rows: RawRecord[]; stats: QueryStats }> {
+  async queryRaw(ref: DatasetRef, syncRunIds: string[], limit: number, source?: string): Promise<{ rows: RawRecord[]; stats: QueryStats }> {
     const s = schema(ref);
     if (syncRunIds.length === 0) return { rows: [], stats: NO_STATS };
     try {
@@ -122,11 +122,11 @@ export class LocalWarehouse implements Warehouse {
              to_char(ingested_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ingested_at,
              payload_json::text as payload_json, is_simulated, schema_version
            from ${s}.raw_records
-           where sync_run_id = any($1::text[]) and record_date >= current_date - 400
+           where sync_run_id = any($1::text[]) and record_date >= current_date - 400 and ($3::text is null or source = $3)
            order by record_date, source, payload_json, ingested_at desc) d
          order by record_date desc, source, ingested_at desc
          limit $2`,
-        [syncRunIds, Math.min(Math.max(limit, 1), 2000)],
+        [syncRunIds, Math.min(Math.max(limit, 1), 2000), source ?? null],
       );
       return { rows: r.rows as RawRecord[], stats: NO_STATS };
     } catch (err) {
@@ -136,13 +136,13 @@ export class LocalWarehouse implements Warehouse {
 
   async deleteConnectionData(
     ref: DatasetRef,
-    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[]; range?: DateRange },
+    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[]; range?: DateRange; rawSources?: string[]; skipNormalized?: boolean },
   ): Promise<{ range: DateRange | null }> {
     const s = schema(ref);
     const client = await this.pool.connect();
     try {
       await client.query("begin");
-      const del = await client.query<{ from: string | null; to: string | null }>(
+      const del = scope.skipNormalized ? { rows: [] as { from: string | null; to: string | null }[] } : await client.query<{ from: string | null; to: string | null }>(
         `with d as (
            delete from ${s}.norm_campaign_daily
             where origin = $1 and is_simulated = $2 and ($3::text is null or account_id = $3)
@@ -153,8 +153,9 @@ export class LocalWarehouse implements Warehouse {
       );
       if (scope.syncRunIds.length) {
         await client.query(
-          `delete from ${s}.raw_records where sync_run_id = any($1::text[]) and ($2::date is null or record_date between $2::date and $3::date)`,
-          [scope.syncRunIds, scope.range?.from ?? null, scope.range?.to ?? null],
+          `delete from ${s}.raw_records where sync_run_id = any($1::text[]) and ($2::date is null or record_date between $2::date and $3::date)
+             and ($4::text[] is null or source = any($4::text[]))`,
+          [scope.syncRunIds, scope.range?.from ?? null, scope.range?.to ?? null, scope.rawSources ?? null],
         );
       }
       await client.query("commit");

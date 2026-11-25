@@ -4,6 +4,7 @@ import { AccessDeniedError, getCompanyAccess } from "../auth/authz";
 import { getResourceForCompany, toDatasetRef } from "../registry/registry";
 import { computeNextRun } from "../scheduling/schedule";
 import type { RawRecord } from "../../lib/model";
+import { GA4_OPTIONAL_REPORTS, sanitizeGa4Reports } from "../../lib/ga4Catalog";
 import type { Warehouse, WarehouseProvider } from "../warehouse/types";
 
 // One connector's page: details, schedule, raw rows, delete. Every function
@@ -22,6 +23,7 @@ export interface ConnectionDetail {
   data_as_of: string | null;
   last_error: string | null;
   created_at: string;
+  settings: { ga4_reports?: string[] };
   schedule: { frequency: "daily" | "manual"; local_time: string; timezone: string; enabled: boolean; next_run_at: string | null } | null;
   access: "manage" | "read";
 }
@@ -30,7 +32,7 @@ export async function loadConnection(db: Queryable, userId: string, connectionId
   if (!/^[0-9a-f-]{36}$/i.test(connectionId)) return null;
   const r = await db.query(
     `select c.id, c.company_id, c.workspace_id, c.provider_id, c.mode, c.status, c.external_account_id, c.external_account_name,
-            c.last_synced_at, c.data_as_of::text as data_as_of, c.last_error, c.created_at,
+            c.last_synced_at, c.data_as_of::text as data_as_of, c.last_error, c.created_at, c.settings,
             s.frequency, to_char(s.local_time, 'HH24:MI') as local_time, s.timezone, s.enabled, s.next_run_at
        from public.company_connections c
        left join public.sync_schedules s on s.connection_id = c.id
@@ -100,6 +102,7 @@ export async function loadRawRows(
   userId: string,
   connectionId: string,
   limit = 500,
+  source?: string,
 ): Promise<{ rows: RawRecord[]; available: boolean }> {
   const c = await loadConnection(db, userId, connectionId);
   if (!c) throw new AccessDeniedError();
@@ -107,7 +110,7 @@ export async function loadRawRows(
   if (!resource || resource.status !== "ready") return { rows: [], available: false };
   const ids = await runIds(db, c.id);
   const wh = await getWarehouse(resource.provider);
-  const { rows } = await wh.queryRaw(toDatasetRef(resource), ids, limit);
+  const { rows } = await wh.queryRaw(toDatasetRef(resource), ids, limit, source);
   return { rows, available: true };
 }
 
@@ -158,4 +161,48 @@ export async function loadRuns(db: Queryable, connectionId: string, limit = 20) 
       [connectionId, limit],
     )
   ).rows;
+}
+
+/**
+ * Switch an extra GA4 report on or off for a connector. Off also deletes that
+ * report's raw rows, so stale data cannot be mistaken for current data.
+ * Returns whether a backfill should be requested (report switched on).
+ */
+export async function setGa4Report(
+  db: Queryable,
+  getWarehouse: (p: WarehouseProvider) => Promise<Warehouse>,
+  userId: string,
+  connectionId: string,
+  reportId: string,
+  on: boolean,
+): Promise<{ backfill: boolean }> {
+  const c = await requireManage(db, userId, connectionId);
+  if (c.provider_id !== "ga4" || c.mode !== "live") throw new Error("reports can be chosen only for live GA4 connectors");
+  if (!GA4_OPTIONAL_REPORTS.some((r) => r.id === reportId)) throw new Error("unknown report");
+  const current = sanitizeGa4Reports(c.settings?.ga4_reports);
+  const next = sanitizeGa4Reports(on ? [...current, reportId] : current.filter((r) => r !== reportId));
+  await db.query(
+    `update public.company_connections set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{ga4_reports}', $2::jsonb), updated_at = now() where id = $1`,
+    [c.id, JSON.stringify(next)],
+  );
+  if (!on) {
+    const resource = await getResourceForCompany(db, c.company_id);
+    if (resource?.status === "ready") {
+      const wh = await getWarehouse(resource.provider);
+      await wh.deleteConnectionData(toDatasetRef(resource), {
+        origin: "ga4",
+        isSimulated: false,
+        accountId: c.external_account_id,
+        syncRunIds: await runIds(db, c.id),
+        rawSources: [`ga4:${reportId}`],
+        skipNormalized: true,
+      });
+    }
+  }
+  await db.query(
+    `insert into public.audit_logs (workspace_id, company_id, actor_user_id, action, target_type, target_id, metadata)
+     values ($1, $2, $3, 'connection.report_toggled', 'connection', $4, $5)`,
+    [c.workspace_id, c.company_id, userId, c.id, JSON.stringify({ report: reportId, on })],
+  );
+  return { backfill: on && !current.includes(reportId) };
 }
