@@ -76,7 +76,9 @@ export class Ga4Connector implements Connector {
           date: ga4Date(date!),
           account_id: ctx.externalAccountId,
           account_name: null,
-          campaign_id: campaignId || "(not set)",
+          // Traffic without a campaign comes back as "(not set)" with the channel as the name
+          // ("(organic)", "(direct)"…): keep those apart instead of merging them under one id.
+          campaign_id: campaignId && campaignId !== "(not set)" ? campaignId : `(not set) ${campaignName ?? ""}`.trim(),
           campaign_name: campaignName || null,
           currency: body.metadata?.currencyCode ?? null,
           timezone: tz,

@@ -216,6 +216,30 @@ describe("scheduled sync with checkpoints, late arrivals and recovery (simulated
     expect(gap.details.dates).toEqual(["2026-10-05"]);
   });
 
+  it("a re-sync replaces the window: campaigns the provider no longer returns do not linger", async () => {
+    const shrinking: Connector = Object.assign(Object.create(SimulatedConnector.prototype), new SimulatedConnector("google_ads"));
+    const orig = shrinking.fetchDaily.bind(shrinking);
+    shrinking.fetchDaily = async (c) => {
+      const r = await orig(c);
+      const first = r.records[0]!.campaign_id;
+      return { ...r, records: r.records.filter((x) => x.campaign_id === first) };
+    };
+    const deps = await workerDeps({ now, syncOverrides: { connectorOverride: () => shrinking } });
+    const ds = (await pool.query(`select * from public.analytics_resources where company_id = $1`, [cb])).rows[0];
+    const ref = { provider: "local" as const, projectId: ds.project_id, datasetId: ds.dataset_id, location: ds.location };
+    const wh = await localWarehouse();
+    const range = { from: "2026-10-01", to: "2026-10-03" };
+    const before = await wh.queryCampaigns(ref, range, 100);
+    expect(before.rows.filter((r) => r.origin === "google_ads").length).toBeGreaterThan(1);
+    await B.client.rpc("request_sync", { p_connection_id: conn, p_window_start: range.from, p_window_end: range.to });
+    expect(await runSyncOnce(deps)).toBe("succeeded");
+    const after = await wh.queryCampaigns(ref, range, 100);
+    expect(after.rows.filter((r) => r.origin === "google_ads").length).toBe(1);
+    // Days outside the window are untouched.
+    const outside = await wh.queryCampaigns(ref, { from: "2026-10-06", to: "2026-10-07" }, 100);
+    expect(outside.rows.filter((r) => r.origin === "google_ads").length).toBeGreaterThan(1);
+  });
+
   it("expired credentials mark a live connection 'expired' and stop retrying", async () => {
     const live = await pool.query<{ id: string }>(
       `insert into public.company_connections (workspace_id, company_id, provider_id, mode, status, external_account_id)

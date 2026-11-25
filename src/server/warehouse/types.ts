@@ -42,7 +42,7 @@ export interface Warehouse {
    */
   deleteConnectionData(
     ref: DatasetRef,
-    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[] },
+    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[]; range?: DateRange },
   ): Promise<{ range: DateRange | null }>;
   /** Empties the data tables (raw, normalized, mart) and keeps the dataset and schema. */
   clearData(ref: DatasetRef): Promise<void>;

@@ -195,6 +195,17 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
       rawCount = w.written;
     }
 
+    // An API sync is the source of truth for its window: rows the provider no longer
+    // returns (renamed or regrouped campaigns) must not linger and double count.
+    if (connector && window) {
+      await wh.deleteConnectionData(ref, {
+        origin: connector.origin,
+        isSimulated: conn.mode === "simulated",
+        accountId: conn.mode === "live" ? (conn.external_account_id ?? "") : null,
+        syncRunIds: [],
+        range: window,
+      });
+    }
     const upsert = await wh.upsertNormalized(ref, normalized);
     const dates = normalized.map((r) => r.metric_date).sort();
     const touched = dates.length ? { from: dates[0]!, to: dates[dates.length - 1]! } : null;

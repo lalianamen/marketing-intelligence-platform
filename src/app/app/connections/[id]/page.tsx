@@ -111,7 +111,11 @@ export default async function ConnectionPage({ params, searchParams }: { params:
               </fieldset>
               <label className="flex items-center gap-2 text-sm"><input type="radio" name="frequency" value="manual" defaultChecked={c.schedule.frequency === "manual"} /> Only when I press “Update now”</label>
               <p className="text-xs text-gray-500">
-                {c.schedule.frequency === "daily" && c.schedule.next_run_at ? `Next automatic update: ${fmtDateTime(c.schedule.next_run_at, tz)} (a few minutes of spread are added so not all sources hit Google at once).` : "Automatic updates are off."}
+                {c.schedule.frequency === "daily" && c.schedule.next_run_at
+                  ? new Date(c.schedule.next_run_at).getTime() <= Date.now()
+                    ? "Next automatic update: due now — it starts at the next scheduler check (within about an hour)."
+                    : `Next automatic update: about ${fmtDateTime(c.schedule.next_run_at, tz)} (the scheduler checks hourly; a few minutes of spread are added so not all sources hit Google at once).`
+                  : "Automatic updates are off."}
                 {" "}Each update re-reads the recent days, because platforms keep adjusting them for a while.
               </p>
               <SubmitButton pendingText="Saving…">Save</SubmitButton>

@@ -43,6 +43,17 @@ describe("GA4 connector (mocked HTTP)", () => {
     expect(String(f.mock.calls[1]![0])).toContain("/v1beta/properties/123456:runReport");
   });
 
+  it("traffic without a campaign keeps one row per channel instead of merging under \"(not set)\"", async () => {
+    const row = (name: string, sessions: string) => ({ dimensionValues: [{ value: "20261101" }, { value: "(not set)" }, { value: name }], metricValues: [{ value: sessions }, { value: "0" }, { value: "0" }] });
+    const f = vi.fn().mockResolvedValueOnce(tokenOk.clone()).mockResolvedValueOnce(json(200, { rowCount: 2, metadata: {}, rows: [row("(organic)", "18"), row("(direct)", "20")] }));
+    const c = new Ga4Connector({ clientId: "id", clientSecret: "s", fetch: f });
+    const out = await c.fetchDaily({ ...ctx, externalAccountId: "123456" });
+    expect(out.records.map((r) => [r.campaign_id, r.campaign_name, r.metrics.sessions])).toEqual([
+      ["(not set) (organic)", "(organic)", 18],
+      ["(not set) (direct)", "(direct)", 20],
+    ]);
+  });
+
   it("expired refresh token → auth_expired (not retryable)", async () => {
     const f = vi.fn().mockResolvedValue(json(400, { error: "invalid_grant" }));
     const c = new Ga4Connector({ clientId: "id", clientSecret: "s", fetch: f });

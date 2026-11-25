@@ -136,7 +136,7 @@ export class LocalWarehouse implements Warehouse {
 
   async deleteConnectionData(
     ref: DatasetRef,
-    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[] },
+    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[]; range?: DateRange },
   ): Promise<{ range: DateRange | null }> {
     const s = schema(ref);
     const client = await this.pool.connect();
@@ -146,9 +146,10 @@ export class LocalWarehouse implements Warehouse {
         `with d as (
            delete from ${s}.norm_campaign_daily
             where origin = $1 and is_simulated = $2 and ($3::text is null or account_id = $3)
+              and ($4::date is null or metric_date between $4::date and $5::date)
             returning metric_date)
          select to_char(min(metric_date), 'YYYY-MM-DD') as "from", to_char(max(metric_date), 'YYYY-MM-DD') as "to" from d`,
-        [scope.origin, scope.isSimulated, scope.accountId],
+        [scope.origin, scope.isSimulated, scope.accountId, scope.range?.from ?? null, scope.range?.to ?? null],
       );
       if (scope.syncRunIds.length) await client.query(`delete from ${s}.raw_records where sync_run_id = any($1::text[])`, [scope.syncRunIds]);
       await client.query("commit");

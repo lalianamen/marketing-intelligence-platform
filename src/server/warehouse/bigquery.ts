@@ -231,11 +231,12 @@ export class BigQueryWarehouse implements Warehouse {
 
   async deleteConnectionData(
     ref: DatasetRef,
-    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[] },
+    scope: { origin: string; isSimulated: boolean; accountId: string | null; syncRunIds: string[]; range?: DateRange },
   ): Promise<{ range: DateRange | null }> {
-    const where = `origin = @origin AND is_simulated = @sim AND (@acct IS NULL OR account_id = @acct)`;
-    const params = { origin: scope.origin, sim: scope.isSimulated, acct: scope.accountId };
-    const types = { origin: "STRING", sim: "BOOL", acct: "STRING" };
+    const where = `origin = @origin AND is_simulated = @sim AND (@acct IS NULL OR account_id = @acct)
+      AND (@from IS NULL OR metric_date BETWEEN @from AND @to)`;
+    const params = { origin: scope.origin, sim: scope.isSimulated, acct: scope.accountId, from: scope.range?.from ?? null, to: scope.range?.to ?? null };
+    const types = { origin: "STRING", sim: "BOOL", acct: "STRING", from: "DATE", to: "DATE" };
     const r = await this.run(
       ref,
       `SELECT CAST(MIN(metric_date) AS STRING) AS f, CAST(MAX(metric_date) AS STRING) AS t FROM ${this.fq(ref, "norm_campaign_daily")} WHERE ${where}`,
