@@ -13,7 +13,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ScheduleForm } from "@/components/ScheduleForm";
 import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
 import { fmtDateTime, fmtInt } from "@/lib/format";
-import { parseRawTableParams, rawTableQuery, valueAt } from "@/lib/rawTable";
+import { displayValue, parseRawTableParams, rawTableQuery, valueAt } from "@/lib/rawTable";
 import { RawFilterRow } from "@/components/RawFilterRow";
 import { ScrollX } from "@/components/ScrollX";
 import { Expandable } from "@/components/Expandable";
@@ -333,15 +333,15 @@ export default async function ConnectionPage({ params, searchParams }: { params:
                   <tr>
                     <th className="px-2 py-2"><a href={sortLink("day")} className="hover:text-gray-900">Day{sortMark("day")}</a></th>
                     {cols.map((col) => <th key={col.label} className="whitespace-nowrap px-2"><a href={sortLink(col.label)} className="hover:text-gray-900">{col.label}{sortMark(col.label)}</a></th>)}
-                    <th className="whitespace-nowrap px-2"><a href={sortLink("imported")} className="hover:text-gray-900">Imported{sortMark("imported")}</a></th>
+                    <th className="whitespace-nowrap px-2 pr-6"><a href={sortLink("imported")} className="hover:text-gray-900">Imported{sortMark("imported")}</a></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 font-mono">
                   {parsed.map(({ r, payload }) => (
                     <tr key={r.record_id}>
                       <td className="whitespace-nowrap px-2 py-1.5 font-sans">{r.record_date}</td>
-                      {cols.map((col) => <td key={col.label} className="whitespace-nowrap px-2">{valueAt(payload, col.path)}</td>)}
-                      <td className="whitespace-nowrap px-2 font-sans text-gray-500">{fmtDateTime(r.ingested_at, tz)}</td>
+                      {cols.map((col) => { const v = valueAt(payload, col.path); const shown = displayValue(col.label, v); return <td key={col.label} className="whitespace-nowrap px-2" title={shown !== v ? v : undefined}>{shown}</td>; })}
+                      <td className="whitespace-nowrap px-2 pr-6 font-sans text-gray-500">{fmtDateTime(r.ingested_at, tz)}</td>
                     </tr>
                   ))}
                 </tbody>

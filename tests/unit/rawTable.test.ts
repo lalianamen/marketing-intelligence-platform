@@ -53,3 +53,16 @@ describe("BigQuery raw page query", () => {
     await expect(wh.queryRawPage(ref, { syncRunIds: ["r1"], filters: [{ path: ["a'; DROP"], op: "eq", value: "1" }], limit: 1, offset: 0 })).rejects.toMatchObject({ code: "invalid" });
   });
 });
+
+describe("displayValue", () => {
+  it("shows durations as m:ss and long decimals rounded; the stored value is untouched elsewhere", async () => {
+    const { displayValue } = await import("@/lib/rawTable");
+    expect(displayValue("averageSessionDuration", "19.938517500000003")).toBe("0:20");
+    expect(displayValue("averageSessionDuration", "1861.271757")).toBe("31:01");
+    expect(displayValue("averageSessionDuration", "4778.86")).toBe("1:19:39");
+    expect(displayValue("sessions", "12")).toBe("12");
+    expect(displayValue("purchaseRevenue", "413.66852633333338")).toBe("413.67");
+    expect(displayValue("sessionSource", "google")).toBe("google");
+    expect(displayValue("x", "")).toBe("");
+  });
+});

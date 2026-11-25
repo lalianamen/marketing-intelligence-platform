@@ -113,3 +113,25 @@ export function valueAt(payload: unknown, path: string[]): string {
   for (const seg of path) v = v && typeof v === "object" ? (v as Record<string, unknown>)[seg] : undefined;
   return v === undefined || v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
 }
+
+/** Fields that are durations in seconds (shown as m:ss; stored and exported exactly). */
+const DURATION_FIELDS = new Set(["averageSessionDuration", "userEngagementDuration"]);
+
+/**
+ * How a stored value is shown in the table. Only the display changes: filters,
+ * sorting and CSV export use the exact stored value.
+ */
+export function displayValue(label: string, raw: string): string {
+  if (raw === "" || !/^-?\d+(\.\d+)?(e-?\d+)?$/i.test(raw)) return raw;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return raw;
+  if (DURATION_FIELDS.has(label)) {
+    const total = Math.round(n);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = String(total % 60).padStart(2, "0");
+    return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+  }
+  if (Number.isInteger(n)) return raw;
+  return String(Math.round(n * 100) / 100);
+}
