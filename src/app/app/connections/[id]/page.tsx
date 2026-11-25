@@ -3,7 +3,7 @@ import { getCompanyContext } from "@/server/appContext";
 import { getPool } from "@/server/db";
 import { loadConfig } from "@/server/config";
 import { getWarehouse } from "@/server/warehouse";
-import { loadConnection, loadRawRows, loadRuns } from "@/server/connections/manage";
+import { loadConnection, loadRawPage, loadRuns } from "@/server/connections/manage";
 import { modeBadge, PROVIDER_LABEL } from "@/server/companyStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { LoadStatus } from "@/components/LoadStatus";
@@ -12,15 +12,15 @@ import { ConfirmButton } from "@/components/ConfirmButton";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
 import { fmtDateTime, fmtInt } from "@/lib/format";
-import { flattenRawPayload, rawColumns } from "@/lib/rawView";
+import { FILTER_OPS, parseRawTableParams, rawTableQuery, valueAt } from "@/lib/rawTable";
 import { GA4_REPORTS, ga4ReportById, sanitizeGa4Reports } from "@/lib/ga4Catalog";
 import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, syncNowAction, toggleGa4ReportAction, updateScheduleAction } from "../../actions";
 import { addDays, localDate } from "@/lib/dates";
 
 const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
-const RAW_LIMIT = 500;
+const PAGE_SIZE = 100;
 
-export default async function ConnectionPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string; error?: string; queued?: string; report?: string; enabled?: string; disabled?: string; history?: string }> }) {
+export default async function ConnectionPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id } = await params;
   const sp = await searchParams;
   const ctx = await getCompanyContext();
@@ -33,9 +33,28 @@ export default async function ConnectionPage({ params, searchParams }: { params:
   const enabledReports = isGa4Live ? sanitizeGa4Reports(c.settings?.ga4_reports) : [];
   const shownReport = isGa4Live && sp.report && enabledReports.includes(sp.report) ? sp.report : "core";
   const rawSource = isGa4Live ? (shownReport === "core" ? "ga4" : `ga4:${shownReport}`) : undefined;
-  const [runs, raw] = await Promise.all([loadRuns(db, c.id), loadRawRows(db, (p) => getWarehouse(p, cfg), ctx.userId, c.id, RAW_LIMIT, rawSource)]);
-  const flat = raw.rows.map((r) => ({ r, cells: flattenRawPayload(r.origin, r.payload_json) }));
-  const cols = rawColumns(flat.map((f) => f.cells));
+  const tableYesterday = addDays(localDate(new Date(), tz), -1);
+  const tp = parseRawTableParams(sp, tableYesterday);
+  const [runs, raw] = await Promise.all([
+    loadRuns(db, c.id),
+    loadRawPage(db, (p) => getWarehouse(p, cfg), ctx.userId, c.id, tp, { source: rawSource, limit: PAGE_SIZE, offset: (tp.page - 1) * PAGE_SIZE }),
+  ]);
+  const cols = raw.columns;
+  const parsed = raw.rows.map((r) => {
+    let payload: unknown = {};
+    try {
+      payload = JSON.parse(r.payload_json);
+    } catch {
+      payload = {};
+    }
+    return { r, payload };
+  });
+  const baseQ: Record<string, string> = isGa4Live && shownReport !== "core" ? { report: shownReport } : {};
+  const href = (change: Parameters<typeof rawTableQuery>[2]) => `/app/connections/${c.id}?${rawTableQuery(baseQ, tp, { page: 1, ...change })}#raw`;
+  const exportHref = (full: boolean) => `/app/connections/${c.id}/export?${rawTableQuery({ ...baseQ, ...(isGa4Live ? { report: shownReport } : {}), ...(full ? { full: "1" } : {}) }, tp, { page: 1 })}`;
+  const pages = Math.max(1, Math.ceil(raw.total / PAGE_SIZE));
+  const sortLink = (key: string) => href({ sort: key, dir: tp.sort === key && tp.dir === "desc" ? "asc" : "desc" });
+  const sortMark = (key: string) => (tp.sort === key ? (tp.dir === "desc" ? " ↓" : " ↑") : "");
   const b = modeBadge(c.mode);
   const name = PROVIDER_LABEL[c.provider_id] ?? c.provider_id;
   const canManage = c.access === "manage";
@@ -125,8 +144,8 @@ export default async function ConnectionPage({ params, searchParams }: { params:
               <p className="text-xs text-gray-500">
                 {c.schedule.frequency === "daily" && c.schedule.next_run_at
                   ? new Date(c.schedule.next_run_at).getTime() <= Date.now()
-                    ? "Next automatic update: due now — it starts at the next scheduler check (within about an hour)."
-                    : `Next automatic update: about ${fmtDateTime(c.schedule.next_run_at, tz)} (the scheduler checks hourly; a few minutes of spread are added so not all sources hit Google at once).`
+                    ? "Next automatic update: due now — it starts within a minute or two."
+                    : `Next automatic update: about ${fmtDateTime(c.schedule.next_run_at, tz)} (the scheduler checks every minute; a few minutes of spread are added so not all sources hit Google at once).`
                   : "Automatic updates are off."}
                 {" "}Each update re-reads the recent days, because platforms keep adjusting them for a while.
               </p>
@@ -256,28 +275,78 @@ export default async function ConnectionPage({ params, searchParams }: { params:
           </nav>
         )}
         <p id="raw" className="mb-3 text-xs text-gray-500">
-          Exactly what {name} returned, before any calculation. Newest days first; identical rows from repeated updates are shown once.
-          {raw.rows.length >= RAW_LIMIT ? ` Showing the latest ${RAW_LIMIT} rows.` : ""}
+          Exactly what {name} returned, before any calculation. One row per day and value; repeated updates replace rows, never duplicate them.
         </p>
-        {!raw.available ? <p className="text-sm text-gray-600">The company&apos;s data space is not ready yet.</p> : raw.rows.length === 0 ? (
-          <p className="text-sm text-gray-600">No raw rows yet. They appear after the first successful update.</p>
-        ) : (
-          <div className="max-h-[32rem] overflow-auto rounded-lg border border-gray-100">
-            <table className="w-full text-left text-xs" data-testid="raw-table">
-              <thead className="sticky top-0 bg-gray-50 uppercase text-gray-500">
-                <tr><th className="px-2 py-2">Day</th>{cols.map((k) => <th key={k} className="whitespace-nowrap px-2">{k}</th>)}<th className="whitespace-nowrap px-2">Imported</th></tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 font-mono">
-                {flat.map(({ r, cells }) => (
-                  <tr key={r.record_id}>
-                    <td className="whitespace-nowrap px-2 py-1.5 font-sans">{r.record_date}</td>
-                    {cols.map((k) => <td key={k} className="whitespace-nowrap px-2">{cells[k] ?? ""}</td>)}
-                    <td className="whitespace-nowrap px-2 font-sans text-gray-500">{fmtDateTime(r.ingested_at, tz)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <form method="get" action={`/app/connections/${c.id}#raw`} className="mb-3 space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs" data-testid="raw-filters">
+          {Object.entries(baseQ).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
+          {tp.sort !== "day" && <input type="hidden" name="sort" value={tp.sort} />}
+          {tp.dir !== "desc" && <input type="hidden" name="dir" value={tp.dir} />}
+          <div className="flex flex-wrap items-end gap-2">
+            <span className="font-medium text-gray-700">Period</span>
+            {[["7", "7 days"], ["30", "30 days"], ["90", "90 days"], ["all", "All"]].map(([v, l]) => (
+              <a key={v} href={href({ preset: v!, from: null, to: null })} className={`rounded-md px-2 py-1 ring-1 ${tp.preset === v ? "bg-brand-50 text-brand-700 ring-brand-200" : "bg-white text-gray-700 ring-gray-200"}`}>{l}</a>
+            ))}
+            <label className="flex items-center gap-1">from <input type="date" name="from" defaultValue={tp.from ?? ""} className="rounded border border-gray-300 px-1.5 py-1" /></label>
+            <label className="flex items-center gap-1">to <input type="date" name="to" defaultValue={tp.to ?? ""} className="rounded border border-gray-300 px-1.5 py-1" /></label>
+            <input type="hidden" name="period" value="custom" />
           </div>
+          {[1, 2, 3].map((n) => {
+            const f = tp.filters[n - 1];
+            return (
+              <div key={n} className="flex flex-wrap items-center gap-2">
+                <span className="w-12 font-medium text-gray-700">{n === 1 ? "Filter" : "and"}</span>
+                <select name={`f${n}c`} defaultValue={f?.col ?? ""} className="rounded border border-gray-300 px-1.5 py-1">
+                  <option value="">— column —</option>
+                  {cols.map((col) => <option key={col.label} value={col.label}>{col.label}</option>)}
+                </select>
+                <select name={`f${n}o`} defaultValue={f?.op ?? "contains"} className="rounded border border-gray-300 px-1.5 py-1">
+                  {FILTER_OPS.map((o) => <option key={o.op} value={o.op}>{o.label}</option>)}
+                </select>
+                <input name={`f${n}v`} defaultValue={f?.value ?? ""} placeholder="value" className="w-40 rounded border border-gray-300 px-1.5 py-1" />
+              </div>
+            );
+          })}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button className="rounded-md bg-brand-600 px-3 py-1.5 font-medium text-white">Apply</button>
+            <a href={`/app/connections/${c.id}?${new URLSearchParams(baseQ).toString()}#raw`} className="rounded-md px-3 py-1.5 text-gray-700 ring-1 ring-gray-300">Reset</a>
+            <span className="ml-auto flex flex-wrap gap-2">
+              <a href={exportHref(false)} className="rounded-md bg-white px-3 py-1.5 font-medium text-gray-800 ring-1 ring-gray-300" data-testid="export-view">Export this view (CSV)</a>
+              <a href={exportHref(true)} className="rounded-md bg-white px-3 py-1.5 font-medium text-gray-800 ring-1 ring-gray-300" data-testid="export-all">Export full period (CSV)</a>
+            </span>
+          </div>
+        </form>
+        {!raw.available ? <p className="text-sm text-gray-600">The company&apos;s data space is not ready yet.</p> : raw.total === 0 ? (
+          <p className="text-sm text-gray-600">No rows for this period and filters.</p>
+        ) : (
+          <>
+            <p className="mb-2 text-xs text-gray-600" data-testid="raw-total">{raw.total.toLocaleString("en-US")} rows · page {tp.page} of {pages}{tp.from || tp.to ? ` · ${tp.from ?? "…"} → ${tp.to ?? "…"}` : " · all days"}</p>
+            <div className="max-h-[32rem] overflow-auto rounded-lg border border-gray-100">
+              <table className="w-full text-left text-xs" data-testid="raw-table">
+                <thead className="sticky top-0 bg-gray-50 uppercase text-gray-500">
+                  <tr>
+                    <th className="px-2 py-2"><a href={sortLink("day")} className="hover:text-gray-900">Day{sortMark("day")}</a></th>
+                    {cols.map((col) => <th key={col.label} className="whitespace-nowrap px-2"><a href={sortLink(col.label)} className="hover:text-gray-900">{col.label}{sortMark(col.label)}</a></th>)}
+                    <th className="whitespace-nowrap px-2"><a href={sortLink("imported")} className="hover:text-gray-900">Imported{sortMark("imported")}</a></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 font-mono">
+                  {parsed.map(({ r, payload }) => (
+                    <tr key={r.record_id}>
+                      <td className="whitespace-nowrap px-2 py-1.5 font-sans">{r.record_date}</td>
+                      {cols.map((col) => <td key={col.label} className="whitespace-nowrap px-2">{valueAt(payload, col.path)}</td>)}
+                      <td className="whitespace-nowrap px-2 font-sans text-gray-500">{fmtDateTime(r.ingested_at, tz)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {pages > 1 && (
+              <div className="mt-2 flex items-center gap-2 text-xs">
+                {tp.page > 1 && <a href={href({ page: tp.page - 1 })} className="rounded-md px-2 py-1 ring-1 ring-gray-300">← Previous</a>}
+                {tp.page < pages && <a href={href({ page: tp.page + 1 })} className="rounded-md px-2 py-1 ring-1 ring-gray-300">Next →</a>}
+              </div>
+            )}
+          </>
         )}
       </Card>
     </div>

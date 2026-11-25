@@ -2,6 +2,9 @@ import type { BigQuery } from "@google-cloud/bigquery";
 import type { CampaignRow, MartRow, NormalizedRow, RawRecord } from "../../lib/model";
 import { assertSafeIdentifier, assertSafeProjectId } from "./datasetId";
 import {
+  assertRawPath,
+  type RawPageQuery,
+  type RawPath,
   CURRENT_SCHEMA_VERSION,
   type DatasetLabels,
   type DatasetRef,
@@ -228,6 +231,46 @@ export class BigQueryWarehouse implements Warehouse {
       { ids: ["STRING"], lim: "INT64", src: "STRING" },
     );
     return { rows: res.rows as unknown as RawRecord[], stats: res.stats };
+  }
+
+  async queryRawPage(ref: DatasetRef, q: RawPageQuery): Promise<{ rows: RawRecord[]; total: number; stats: QueryStats }> {
+    if (q.syncRunIds.length === 0) return { rows: [], total: 0, stats: { bytesProcessed: null, bytesBilled: null } };
+    const params: Record<string, unknown> = { ids: q.syncRunIds };
+    const types: Record<string, unknown> = { ids: ["STRING"] };
+    const where = ["sync_run_id IN UNNEST(@ids)"];
+    if (q.source) { where.push("source = @src"); params.src = q.source; types.src = "STRING"; }
+    if (q.from) { where.push("record_date >= @from"); params.from = q.from; types.from = "DATE"; }
+    if (q.to) { where.push("record_date <= @to"); params.to = q.to; types.to = "DATE"; }
+    // Paths are validated to [A-Za-z0-9_] segments, so they are safe to inline as a JSONPath literal.
+    const col = (path: RawPath) =>
+      `JSON_VALUE(payload_json, '$${assertRawPath(path).map((seg) => (/^\d+$/.test(seg) ? `[${seg}]` : `.${seg}`)).join("")}')`;
+    (q.filters ?? []).slice(0, 5).forEach((f, i) => {
+      const c = col(f.path);
+      const name = `f${i}`;
+      if (f.op === "contains") { where.push(`STRPOS(LOWER(${c}), LOWER(@${name})) > 0`); params[name] = f.value; types[name] = "STRING"; }
+      else if (f.op === "eq") { where.push(`${c} = @${name}`); params[name] = f.value; types[name] = "STRING"; }
+      else { where.push(`SAFE_CAST(${c} AS FLOAT64) ${f.op === "gt" ? ">" : "<"} @${name}`); params[name] = Number(f.value); types[name] = "FLOAT64"; }
+    });
+    const dir = q.sort?.dir === "asc" ? "ASC" : "DESC";
+    let order = `record_date ${dir}, source, ingested_at DESC`;
+    if (q.sort && Array.isArray(q.sort.by)) {
+      const c = col(q.sort.by);
+      order = `SAFE_CAST(${c} AS FLOAT64) ${dir} NULLS LAST, ${c} ${dir} NULLS LAST, record_date DESC`;
+    } else if (q.sort?.by === "ingested_at") order = `ingested_at ${dir}, record_date DESC`;
+    const w = where.join(" AND ");
+    const total = await this.run(ref, `SELECT COUNT(*) AS n FROM ${this.fq(ref, "raw_records")} WHERE ${w}`, params, types);
+    const res = await this.run(
+      ref,
+      `SELECT record_id, sync_run_id, origin, source, CAST(record_date AS STRING) AS record_date,
+         FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', ingested_at) AS ingested_at, payload_json, is_simulated, schema_version
+       FROM ${this.fq(ref, "raw_records")} WHERE ${w}
+       ORDER BY ${order}
+       LIMIT @lim OFFSET @off`,
+      { ...params, lim: Math.min(Math.max(q.limit, 1), 50000), off: Math.max(q.offset, 0) },
+      { ...types, lim: "INT64", off: "INT64" },
+    );
+    const n = (total.rows[0] as { n?: unknown } | undefined)?.n;
+    return { rows: res.rows as unknown as RawRecord[], total: Number(n ?? 0), stats: res.stats };
   }
 
   async deleteConnectionData(

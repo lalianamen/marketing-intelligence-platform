@@ -182,6 +182,27 @@ try {
   await page.locator('[data-testid="schedule-form"] button:has-text("Save")').click();
   await page.waitForURL(/saved=1/);
   assert.equal(await page.locator('[data-testid="schedule-form"] input[name="local_time"]').inputValue(), "09:30");
+  await page.click('[data-testid="raw-filters"] a:has-text("All")');
+  await page.waitForURL(/period=all/);
+  const allRows = await page.getByTestId("raw-total").innerText();
+  await page.selectOption('[data-testid="raw-filters"] select[name="f1c"]', "clicks");
+  await page.selectOption('[data-testid="raw-filters"] select[name="f1o"]', "gt");
+  await page.fill('[data-testid="raw-filters"] input[name="f1v"]', "200");
+  await page.click('[data-testid="raw-filters"] button:has-text("Apply")');
+  await page.waitForURL(/f1c=clicks/);
+  const filtered = await page.getByTestId("raw-total").innerText();
+  assert.ok(parseInt(filtered.replace(/,/g, ""), 10) < parseInt(allRows.replace(/,/g, ""), 10), "filter reduces rows");
+  await page.click('[data-testid="raw-table"] th a:has-text("clicks")');
+  await page.waitForURL(/sort=clicks/);
+  const firstClicks = Number(await page.locator('[data-testid="raw-table"] tbody tr').first().locator("td").nth(1).innerText());
+  assert.ok(firstClicks > 200, "sorted by clicks and filtered");
+  const [rawDownload] = await Promise.all([page.waitForEvent("download"), page.click('[data-testid="export-view"]')]);
+  const csvPath = `${OUT}/raw-export.csv`;
+  await rawDownload.saveAs(csvPath);
+  const csvText = (await import("node:fs")).readFileSync(csvPath, "utf8");
+  assert.match(csvText.split("\n")[0], /day,.*clicks.*imported_at_utc/);
+  assert.equal(csvText.trim().split("\n").length - 1, parseInt(filtered.replace(/,/g, ""), 10), "export has the filtered rows");
+  step("raw data: period, filter, sort and CSV export of the view");
   await page.screenshot({ path: `${OUT}/10-connector.png`, fullPage: true });
   step("connector page: schedule saved, raw data table shown");
 

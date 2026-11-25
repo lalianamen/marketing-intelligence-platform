@@ -5,6 +5,7 @@ import { getResourceForCompany, toDatasetRef } from "../registry/registry";
 import { computeNextRun } from "../scheduling/schedule";
 import type { RawRecord } from "../../lib/model";
 import { GA4_OPTIONAL_REPORTS, sanitizeGa4Reports } from "../../lib/ga4Catalog";
+import { type RawColumn, type RawTableParams, rawColumnsFor } from "../../lib/rawTable";
 import type { Warehouse, WarehouseProvider } from "../warehouse/types";
 
 // One connector's page: details, schedule, raw rows, delete. Every function
@@ -205,4 +206,44 @@ export async function setGa4Report(
     [c.workspace_id, c.company_id, userId, c.id, JSON.stringify({ report: reportId, on })],
   );
   return { backfill: on && !current.includes(reportId) };
+}
+
+/** One page (or an export) of a connector's raw rows with period, filters and sorting. */
+export async function loadRawPage(
+  db: Queryable,
+  getWarehouse: (p: WarehouseProvider) => Promise<Warehouse>,
+  userId: string,
+  connectionId: string,
+  params: RawTableParams,
+  opts: { source?: string; limit: number; offset: number; ignoreFilters?: boolean },
+): Promise<{ columns: RawColumn[]; rows: RawRecord[]; total: number; available: boolean; origin: string }> {
+  const c = await loadConnection(db, userId, connectionId);
+  if (!c) throw new AccessDeniedError();
+  const resource = await getResourceForCompany(db, c.company_id);
+  if (!resource || resource.status !== "ready") return { columns: [], rows: [], total: 0, available: false, origin: c.provider_id };
+  const ids = await runIds(db, c.id);
+  const wh = await getWarehouse(resource.provider);
+  const ref = toDatasetRef(resource);
+  let columns = rawColumnsFor(c.provider_id, opts.source, []);
+  if (columns.length === 0) {
+    const sample = await wh.queryRawPage(ref, { syncRunIds: ids, source: opts.source, limit: 20, offset: 0 });
+    columns = rawColumnsFor(c.provider_id, opts.source, sample.rows.map((r) => r.payload_json));
+  }
+  const byLabel = new Map(columns.map((col) => [col.label, col.path]));
+  const filters = opts.ignoreFilters
+    ? []
+    : params.filters.filter((f) => byLabel.has(f.col) && (f.op === "contains" || f.op === "eq" || Number.isFinite(Number(f.value))))
+        .map((f) => ({ path: byLabel.get(f.col)!, op: f.op, value: f.value }));
+  const sortBy = params.sort === "imported" ? "ingested_at" : byLabel.get(params.sort) ?? "record_date";
+  const page = await wh.queryRawPage(ref, {
+    syncRunIds: ids,
+    source: opts.source,
+    from: opts.ignoreFilters ? undefined : (params.from ?? undefined),
+    to: opts.ignoreFilters ? undefined : (params.to ?? undefined),
+    filters,
+    sort: opts.ignoreFilters ? undefined : { by: sortBy, dir: params.dir },
+    limit: opts.limit,
+    offset: opts.offset,
+  });
+  return { columns, rows: page.rows, total: page.total, available: true, origin: c.provider_id };
 }

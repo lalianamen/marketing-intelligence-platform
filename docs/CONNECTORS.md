@@ -114,6 +114,16 @@ Google user can read and connects it:
   for live connectors, account; its raw rows by sync run), rebuilds the mart for the affected days, then deletes runs,
   schedule and token. Refused while an update is running.
 
+## Raw data table and export
+
+- Connector page → Raw data: period (7/30/90 days, all, or from–to; default last 30 complete days), up to three
+  column filters (contains, equals, >, <; numbers compared as numbers), sorting by clicking a column, 100 rows per page
+  with the total count. Filtering, sorting and paging run in the warehouse (`queryRawPage`), not in the browser.
+- Columns map to JSON paths in `payload_json` (GA4 core values by position, extra reports and CSV by name). Paths are
+  validated to `[A-Za-z0-9_]` segments before they are used in SQL.
+- `/app/connections/<id>/export`: CSV of the current view, or `full=1` for the whole stored period without filters;
+  at most 50,000 rows per file; UTF-8 with BOM; cells starting with = + - @ are prefixed to stop spreadsheet formulas.
+
 ## Switchable GA4 reports
 
 - Catalog: `src/lib/ga4Catalog.ts` (one source of truth for field names and descriptions). The "core" report

@@ -2,6 +2,9 @@ import pg from "pg";
 import type { CampaignRow, MartRow, NormalizedRow, RawRecord } from "../../lib/model";
 import { assertSafeIdentifier } from "./datasetId";
 import {
+  assertRawPath,
+  type RawPageQuery,
+  type RawPath,
   CURRENT_SCHEMA_VERSION,
   type DatasetLabels,
   type DatasetRef,
@@ -129,6 +132,51 @@ export class LocalWarehouse implements Warehouse {
         [syncRunIds, Math.min(Math.max(limit, 1), 2000), source ?? null],
       );
       return { rows: r.rows as RawRecord[], stats: NO_STATS };
+    } catch (err) {
+      mapPgError(err);
+    }
+  }
+
+  async queryRawPage(ref: DatasetRef, q: RawPageQuery): Promise<{ rows: RawRecord[]; total: number; stats: QueryStats }> {
+    const s = schema(ref);
+    if (q.syncRunIds.length === 0) return { rows: [], total: 0, stats: NO_STATS };
+    const params: unknown[] = [q.syncRunIds];
+    const p = (v: unknown) => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    const where = [`sync_run_id = any($1::text[])`];
+    if (q.source) where.push(`source = ${p(q.source)}`);
+    if (q.from) where.push(`record_date >= ${p(q.from)}::date`);
+    if (q.to) where.push(`record_date <= ${p(q.to)}::date`);
+    const col = (path: RawPath) => `(payload_json #>> ${p(assertRawPath(path))}::text[])`;
+    const num = (expr: string) => `(case when ${expr} ~ '^-?[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$' then (${expr})::float8 end)`;
+    for (const f of (q.filters ?? []).slice(0, 5)) {
+      const c = col(f.path);
+      if (f.op === "contains") where.push(`strpos(lower(${c}), lower(${p(f.value)})) > 0`);
+      else if (f.op === "eq") where.push(`${c} = ${p(f.value)}`);
+      else where.push(`${num(c)} ${f.op === "gt" ? ">" : "<"} ${p(Number(f.value))}::float8`);
+    }
+    const countParams = [...params]; // the count uses only the filter parameters
+    const dir = q.sort?.dir === "asc" ? "asc" : "desc";
+    let order = `record_date ${dir}, source, ingested_at desc`;
+    if (q.sort && Array.isArray(q.sort.by)) {
+      const c = col(q.sort.by);
+      order = `${num(c)} ${dir} nulls last, ${c} ${dir} nulls last, record_date desc`;
+    } else if (q.sort?.by === "ingested_at") order = `ingested_at ${dir}, record_date desc`;
+    try {
+      const w = where.join(" and ");
+      const total = await this.pool.query<{ n: number }>(`select count(*)::int as n from ${s}.raw_records where ${w}`, countParams);
+      const lim = p(Math.min(Math.max(q.limit, 1), 50000));
+      const off = p(Math.max(q.offset, 0));
+      const r = await this.pool.query(
+        `select record_id, sync_run_id, origin, source, to_char(record_date, 'YYYY-MM-DD') as record_date,
+           to_char(ingested_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ingested_at,
+           payload_json::text as payload_json, is_simulated, schema_version
+         from ${s}.raw_records where ${w} order by ${order} limit ${lim} offset ${off}`,
+        params,
+      );
+      return { rows: r.rows as RawRecord[], total: total.rows[0]?.n ?? 0, stats: NO_STATS };
     } catch (err) {
       mapPgError(err);
     }

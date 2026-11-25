@@ -26,6 +26,28 @@ export interface DateRange {
   to: string; // inclusive YYYY-MM-DD
 }
 
+/** A JSON path into payload_json: field names and array indexes only (validated). */
+export type RawPath = string[];
+
+export interface RawPageQuery {
+  syncRunIds: string[];
+  source?: string;
+  from?: string;
+  to?: string;
+  filters?: { path: RawPath; op: "contains" | "eq" | "gt" | "lt"; value: string }[];
+  sort?: { by: "record_date" | "ingested_at" | RawPath; dir: "asc" | "desc" };
+  limit: number;
+  offset: number;
+}
+
+const SEGMENT = /^[A-Za-z0-9_]{1,64}$/;
+export function assertRawPath(path: RawPath): RawPath {
+  if (path.length === 0 || path.length > 4 || !path.every((p) => SEGMENT.test(p))) {
+    throw new WarehouseError("invalid", "invalid raw column");
+  }
+  return path;
+}
+
 export interface Warehouse {
   readonly provider: WarehouseProvider;
   /** true when this is NOT a real BigQuery dataset (local simulated warehouse). */
@@ -36,6 +58,8 @@ export interface Warehouse {
   deleteDataset(ref: DatasetRef): Promise<"deleted" | "not_found">;
   /** Raw provider records of the given sync runs (identical payloads shown once), newest day first. */
   queryRaw(ref: DatasetRef, syncRunIds: string[], limit: number, source?: string): Promise<{ rows: RawRecord[]; stats: QueryStats }>;
+  /** Raw rows with period, column filters, sorting and paging; `total` counts all matching rows. */
+  queryRawPage(ref: DatasetRef, q: RawPageQuery): Promise<{ rows: RawRecord[]; total: number; stats: QueryStats }>;
   /**
    * Deletes one connection's data: normalized rows matching origin / simulation flag / account (when given)
    * and raw rows of its sync runs. Returns the affected date range so the caller can rebuild the mart.
