@@ -51,3 +51,14 @@ describe("raw data table", () => {
     await expect(loadRawPage(pool, deps.getWarehouse, other.id, conn, p, { limit: 100, offset: 0 })).rejects.toThrow();
   });
 });
+
+describe("filter help", () => {
+  it("equals ignores case and suggestions list the real values", async () => {
+    const deps = await workerDeps();
+    const p = parseRawTableParams({ period: "all", f1c: "source", f1o: "eq", f1v: "META_ADS", f2c: "campaign_name" }, yesterday);
+    const page = await loadRawPage(pool, deps.getWarehouse, U.id, conn, p, { limit: 100, offset: 0 });
+    expect(page.total).toBe(5);
+    expect(page.suggestions.source).toEqual(["meta_ads", "bing_ads"]);
+    expect(page.suggestions.campaign_name).toHaveLength(9);
+  });
+});

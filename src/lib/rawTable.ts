@@ -13,7 +13,7 @@ export interface RawColumn {
 export type FilterOp = "contains" | "eq" | "gt" | "lt";
 export const FILTER_OPS: { op: FilterOp; label: string }[] = [
   { op: "contains", label: "contains" },
-  { op: "eq", label: "equals" },
+  { op: "eq", label: "equals (any case)" },
   { op: "gt", label: ">" },
   { op: "lt", label: "<" },
 ];
@@ -44,6 +44,8 @@ export interface RawTableParams {
   sort: string; // "day" | "imported" | column label
   dir: "asc" | "desc";
   page: number;
+  /** Filter columns chosen without a value yet (suggestions only). */
+  suggestFor?: string[];
 }
 
 type SP = Record<string, string | string[] | undefined>;
@@ -63,14 +65,16 @@ export function parseRawTableParams(sp: SP, yesterday: string): RawTableParams {
     to = yesterday;
   }
   const filters: RawTableParams["filters"] = [];
+  const suggestFor: string[] = [];
   for (let i = 1; i <= 3; i++) {
     const col = one(sp[`f${i}c`]).slice(0, 80);
     const op = one(sp[`f${i}o`]) as FilterOp;
-    const value = one(sp[`f${i}v`]).slice(0, 200);
+    const value = one(sp[`f${i}v`]).slice(0, 200).trim();
     if (col && value !== "" && FILTER_OPS.some((o) => o.op === op)) filters.push({ col, op, value });
+    else if (col) suggestFor.push(col);
   }
   const page = Math.max(1, Math.min(10000, Number.parseInt(one(sp.page), 10) || 1));
-  return { from, to, preset, filters, sort: one(sp.sort).slice(0, 80) || "day", dir: one(sp.dir) === "asc" ? "asc" : "desc", page };
+  return { from, to, preset, filters, suggestFor, sort: one(sp.sort).slice(0, 80) || "day", dir: one(sp.dir) === "asc" ? "asc" : "desc", page };
 }
 
 /** URL query for the table, keeping everything else as is. */

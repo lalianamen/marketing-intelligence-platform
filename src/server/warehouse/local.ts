@@ -154,7 +154,7 @@ export class LocalWarehouse implements Warehouse {
     for (const f of (q.filters ?? []).slice(0, 5)) {
       const c = col(f.path);
       if (f.op === "contains") where.push(`strpos(lower(${c}), lower(${p(f.value)})) > 0`);
-      else if (f.op === "eq") where.push(`${c} = ${p(f.value)}`);
+      else if (f.op === "eq") where.push(`lower(${c}) = lower(${p(f.value)})`);
       else where.push(`${num(c)} ${f.op === "gt" ? ">" : "<"} ${p(Number(f.value))}::float8`);
     }
     const countParams = [...params]; // the count uses only the filter parameters
@@ -177,6 +177,22 @@ export class LocalWarehouse implements Warehouse {
         params,
       );
       return { rows: r.rows as RawRecord[], total: total.rows[0]?.n ?? 0, stats: NO_STATS };
+    } catch (err) {
+      mapPgError(err);
+    }
+  }
+
+  async rawValues(ref: DatasetRef, q: { syncRunIds: string[]; source?: string; path: RawPath; limit: number }): Promise<string[]> {
+    const s = schema(ref);
+    if (q.syncRunIds.length === 0) return [];
+    try {
+      const r = await this.pool.query<{ v: string }>(
+        `select payload_json #>> $3::text[] as v from ${s}.raw_records
+          where sync_run_id = any($1::text[]) and ($2::text is null or source = $2) and payload_json #>> $3::text[] is not null
+          group by 1 order by count(*) desc, 1 limit $4`,
+        [q.syncRunIds, q.source ?? null, assertRawPath(q.path), Math.min(Math.max(q.limit, 1), 100)],
+      );
+      return r.rows.map((x) => x.v);
     } catch (err) {
       mapPgError(err);
     }

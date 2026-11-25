@@ -216,11 +216,11 @@ export async function loadRawPage(
   connectionId: string,
   params: RawTableParams,
   opts: { source?: string; limit: number; offset: number; ignoreFilters?: boolean },
-): Promise<{ columns: RawColumn[]; rows: RawRecord[]; total: number; available: boolean; origin: string }> {
+): Promise<{ columns: RawColumn[]; rows: RawRecord[]; total: number; available: boolean; origin: string; suggestions: Record<string, string[]> }> {
   const c = await loadConnection(db, userId, connectionId);
   if (!c) throw new AccessDeniedError();
   const resource = await getResourceForCompany(db, c.company_id);
-  if (!resource || resource.status !== "ready") return { columns: [], rows: [], total: 0, available: false, origin: c.provider_id };
+  if (!resource || resource.status !== "ready") return { columns: [], rows: [], total: 0, available: false, origin: c.provider_id, suggestions: {} };
   const ids = await runIds(db, c.id);
   const wh = await getWarehouse(resource.provider);
   const ref = toDatasetRef(resource);
@@ -245,5 +245,13 @@ export async function loadRawPage(
     limit: opts.limit,
     offset: opts.offset,
   });
-  return { columns, rows: page.rows, total: page.total, available: true, origin: c.provider_id };
+  // Real values for the columns chosen in the filters, so users pick "(referral)" instead of guessing.
+  const suggestions: Record<string, string[]> = {};
+  if (!opts.ignoreFilters) {
+    for (const col of [...new Set(params.filters.map((f) => f.col).concat(params.suggestFor ?? []))].slice(0, 3)) {
+      const path = byLabel.get(col);
+      if (path) suggestions[col] = await wh.rawValues(ref, { syncRunIds: ids, source: opts.source, path, limit: 50 });
+    }
+  }
+  return { columns, rows: page.rows, total: page.total, available: true, origin: c.provider_id, suggestions };
 }

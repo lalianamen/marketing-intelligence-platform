@@ -12,7 +12,8 @@ import { ConfirmButton } from "@/components/ConfirmButton";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
 import { fmtDateTime, fmtInt } from "@/lib/format";
-import { FILTER_OPS, parseRawTableParams, rawTableQuery, valueAt } from "@/lib/rawTable";
+import { parseRawTableParams, rawTableQuery, valueAt } from "@/lib/rawTable";
+import { RawFilterRow } from "@/components/RawFilterRow";
 import { GA4_REPORTS, ga4ReportById, sanitizeGa4Reports } from "@/lib/ga4Catalog";
 import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, syncNowAction, toggleGa4ReportAction, updateScheduleAction } from "../../actions";
 import { addDays, localDate } from "@/lib/dates";
@@ -290,22 +291,16 @@ export default async function ConnectionPage({ params, searchParams }: { params:
             <label className="flex items-center gap-1">to <input type="date" name="to" defaultValue={tp.to ?? ""} className="rounded border border-gray-300 px-1.5 py-1" /></label>
             <input type="hidden" name="period" value="custom" />
           </div>
-          {[1, 2, 3].map((n) => {
-            const f = tp.filters[n - 1];
-            return (
-              <div key={n} className="flex flex-wrap items-center gap-2">
-                <span className="w-12 font-medium text-gray-700">{n === 1 ? "Filter" : "and"}</span>
-                <select name={`f${n}c`} defaultValue={f?.col ?? ""} className="rounded border border-gray-300 px-1.5 py-1">
-                  <option value="">— column —</option>
-                  {cols.map((col) => <option key={col.label} value={col.label}>{col.label}</option>)}
-                </select>
-                <select name={`f${n}o`} defaultValue={f?.op ?? "contains"} className="rounded border border-gray-300 px-1.5 py-1">
-                  {FILTER_OPS.map((o) => <option key={o.op} value={o.op}>{o.label}</option>)}
-                </select>
-                <input name={`f${n}v`} defaultValue={f?.value ?? ""} placeholder="value" className="w-40 rounded border border-gray-300 px-1.5 py-1" />
-              </div>
-            );
-          })}
+          {[1, 2, 3].map((n) => (
+            <RawFilterRow
+              key={`${n}-${sp[`f${n}c`] ?? ""}`}
+              n={n}
+              columns={cols.map((col) => col.label)}
+              valuesUrl={`/app/connections/${c.id}/values${isGa4Live ? `?report=${shownReport}` : ""}`}
+              initial={{ col: sp[`f${n}c`] ?? "", op: sp[`f${n}o`] ?? "eq", value: sp[`f${n}v`] ?? "" }}
+              initialValues={raw.suggestions[sp[`f${n}c`] ?? ""] ?? []}
+            />
+          ))}
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <button className="rounded-md bg-brand-600 px-3 py-1.5 font-medium text-white">Apply</button>
             <a href={`/app/connections/${c.id}?${new URLSearchParams(baseQ).toString()}#raw`} className="rounded-md px-3 py-1.5 text-gray-700 ring-1 ring-gray-300">Reset</a>

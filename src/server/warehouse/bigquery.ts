@@ -248,7 +248,7 @@ export class BigQueryWarehouse implements Warehouse {
       const c = col(f.path);
       const name = `f${i}`;
       if (f.op === "contains") { where.push(`STRPOS(LOWER(${c}), LOWER(@${name})) > 0`); params[name] = f.value; types[name] = "STRING"; }
-      else if (f.op === "eq") { where.push(`${c} = @${name}`); params[name] = f.value; types[name] = "STRING"; }
+      else if (f.op === "eq") { where.push(`LOWER(${c}) = LOWER(@${name})`); params[name] = f.value; types[name] = "STRING"; }
       else { where.push(`SAFE_CAST(${c} AS FLOAT64) ${f.op === "gt" ? ">" : "<"} @${name}`); params[name] = Number(f.value); types[name] = "FLOAT64"; }
     });
     const dir = q.sort?.dir === "asc" ? "ASC" : "DESC";
@@ -271,6 +271,20 @@ export class BigQueryWarehouse implements Warehouse {
     );
     const n = (total.rows[0] as { n?: unknown } | undefined)?.n;
     return { rows: res.rows as unknown as RawRecord[], total: Number(n ?? 0), stats: res.stats };
+  }
+
+  async rawValues(ref: DatasetRef, q: { syncRunIds: string[]; source?: string; path: RawPath; limit: number }): Promise<string[]> {
+    if (q.syncRunIds.length === 0) return [];
+    const jsonPath = `$${assertRawPath(q.path).map((seg) => (/^\d+$/.test(seg) ? `[${seg}]` : `.${seg}`)).join("")}`;
+    const res = await this.run(
+      ref,
+      `SELECT JSON_VALUE(payload_json, '${jsonPath}') AS v FROM ${this.fq(ref, "raw_records")}
+        WHERE sync_run_id IN UNNEST(@ids) AND (@src IS NULL OR source = @src) AND JSON_VALUE(payload_json, '${jsonPath}') IS NOT NULL
+        GROUP BY v ORDER BY COUNT(*) DESC, v LIMIT @lim`,
+      { ids: q.syncRunIds, src: q.source ?? null, lim: Math.min(Math.max(q.limit, 1), 100) },
+      { ids: ["STRING"], src: "STRING", lim: "INT64" },
+    );
+    return res.rows.map((r) => String((r as { v: unknown }).v));
   }
 
   async deleteConnectionData(

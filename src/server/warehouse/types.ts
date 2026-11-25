@@ -60,6 +60,8 @@ export interface Warehouse {
   queryRaw(ref: DatasetRef, syncRunIds: string[], limit: number, source?: string): Promise<{ rows: RawRecord[]; stats: QueryStats }>;
   /** Raw rows with period, column filters, sorting and paging; `total` counts all matching rows. */
   queryRawPage(ref: DatasetRef, q: RawPageQuery): Promise<{ rows: RawRecord[]; total: number; stats: QueryStats }>;
+  /** Most frequent values of one payload field (for filter suggestions). */
+  rawValues(ref: DatasetRef, q: { syncRunIds: string[]; source?: string; path: RawPath; limit: number }): Promise<string[]>;
   /**
    * Deletes one connection's data: normalized rows matching origin / simulation flag / account (when given)
    * and raw rows of its sync runs. Returns the affected date range so the caller can rebuild the mart.

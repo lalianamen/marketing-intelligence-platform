@@ -188,6 +188,9 @@ try {
   await page.selectOption('[data-testid="raw-filters"] select[name="f1c"]', "clicks");
   await page.selectOption('[data-testid="raw-filters"] select[name="f1o"]', "gt");
   await page.fill('[data-testid="raw-filters"] input[name="f1v"]', "200");
+  await page.selectOption('[data-testid="filter-row-2"] select[name="f2c"]', "simulated");
+  await page.locator('[data-testid="filter-row-2"] select[name="f2v"] option[value="true"]').waitFor({ state: "attached" });
+  await page.selectOption('[data-testid="filter-row-2"] select[name="f2v"]', "true");
   await page.click('[data-testid="raw-filters"] button:has-text("Apply")');
   await page.waitForURL(/f1c=clicks/);
   const filtered = await page.getByTestId("raw-total").innerText();
@@ -202,7 +205,7 @@ try {
   const csvText = (await import("node:fs")).readFileSync(csvPath, "utf8");
   assert.match(csvText.split("\n")[0], /day,.*clicks.*imported_at_utc/);
   assert.equal(csvText.trim().split("\n").length - 1, parseInt(filtered.replace(/,/g, ""), 10), "export has the filtered rows");
-  step("raw data: period, filter, sort and CSV export of the view");
+  step("raw data: period, filters (value picked from a list), sort and CSV export of the view");
   await page.screenshot({ path: `${OUT}/10-connector.png`, fullPage: true });
   step("connector page: schedule saved, raw data table shown");
 
