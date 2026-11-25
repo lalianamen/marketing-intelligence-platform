@@ -187,6 +187,9 @@ export default async function ConnectionPage({ params, searchParams }: { params:
               {sp.export === "started" && <div className="mt-3"><Notice tone="green">Full data is turned on. Google sends the first day within about 24 hours; the platform picks it up automatically.</Notice></div>}
               {sp.export_off && <div className="mt-3"><Notice tone="blue">Full data was turned off.</Notice></div>}
               {(sp.export_error || c.export?.error) && <div className="mt-3"><Notice tone="red">{sp.export_error ?? c.export?.error}</Notice></div>}
+              {c.export?.access_pending && (
+                <div className="mt-3"><Notice tone="amber">The platform&apos;s temporary access to this GA4 property is still there. It is removed automatically at the next update of this connector.</Notice></div>
+              )}
               {c.export?.status === "waiting_first_export" && (
                 <p className="mt-3 text-sm text-gray-700">Turned on {c.export.linked_at ? fmtDateTime(c.export.linked_at, tz) : ""}. Waiting for Google&apos;s first daily export (usually within 24 hours). Until then the table is loaded as before.</p>
               )}

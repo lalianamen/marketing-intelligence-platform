@@ -138,10 +138,8 @@ export async function linkGa4Export(
         await removeAccessBinding(f, userToken!, binding);
       } catch (err) {
         console.error(JSON.stringify({ level: "error", msg: "ga4export.binding_not_removed", connection_id: conn.id, binding, error: String((err as Error).message).slice(0, 300) }));
-        await db.query(`update public.ga4_export_links set error = coalesce(error, '') || $2 where connection_id = $1`, [
-          conn.id,
-          " The platform's temporary access could not be removed automatically; remove it in GA4 Admin → Property access management.",
-        ]);
+        // Retried on the next load of the connector (retryPendingAccessRemoval).
+        await db.query(`update public.ga4_export_links set pending_binding = $2 where connection_id = $1`, [conn.id, binding]);
       }
     }
   }

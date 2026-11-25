@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { linkGa4Export, removeGa4Export } from "@/server/ga4export/link";
+import { retryPendingAccessRemoval } from "@/server/ga4export/retry";
 import { loadConnection, setGa4Groups } from "@/server/connections/manage";
 import { decryptSecret } from "@/server/crypto";
 import { createCompany, createVerifiedUser, pool, type TestUser, workerDeps } from "./helpers";
@@ -14,7 +15,7 @@ const SA = "mip-runtime@mkt-platform-prod-2.iam.gserviceaccount.com";
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 /** Fake Google: records every call; the service account's first link attempt is refused (access not applied yet). */
-function fakeGoogle(opts: { bindingFails?: boolean; linkFails?: boolean } = {}) {
+function fakeGoogle(opts: { bindingFails?: boolean; linkFails?: boolean; unbindFails?: boolean } = {}) {
   const calls: { method: string; url: string; auth: string; body: unknown }[] = [];
   let linkAttempts = 0;
   const f = vi.fn(async (url: string | URL, init?: RequestInit) => {
@@ -32,13 +33,13 @@ function fakeGoogle(opts: { bindingFails?: boolean; linkFails?: boolean } = {}) 
     if (u.endsWith("/keyEvents?pageSize=200")) return json(200, { keyEvents: [{ eventName: "generate_lead" }] });
     if (u.includes("/bigQueryLinks?")) return json(200, {});
     if (u.endsWith("/accessBindings") && method === "POST")
-      return opts.bindingFails ? json(403, { error: { status: "PERMISSION_DENIED", message: "user lacks manage users" } }) : json(200, { name: "properties/555/accessBindings/b1" });
+      return opts.bindingFails ? json(403, { error: { status: "PERMISSION_DENIED", message: "user lacks manage users" } }) : json(200, { name: "properties/555/accessBindings/AYVX2ex+b1/Q==" });
     if (u.endsWith("/bigQueryLinks") && method === "POST") {
       linkAttempts++;
       if (opts.linkFails || linkAttempts === 1) return json(403, { error: { status: "PERMISSION_DENIED" } });
       return json(200, { name: "properties/555/bigQueryLinks/l1", project: "projects/123" });
     }
-    if (method === "DELETE") return json(200, {});
+    if (method === "DELETE") return opts.unbindFails && u.includes("/accessBindings/") ? json(503, { error: "busy" }) : json(200, {});
     return json(404, { error: "unexpected " + u });
   });
   return { f, calls };
@@ -79,7 +80,7 @@ describe("turning on GA4 full data", () => {
     const links = g.calls.filter((c) => c.url.endsWith("/bigQueryLinks") && c.method === "POST");
     expect(links.map((c) => c.auth)).toEqual(["Bearer sa-token", "Bearer sa-token"]); // retried once the access applied
     const removed = g.calls.find((c) => c.method === "DELETE")!;
-    expect(removed.url).toBe("https://analyticsadmin.googleapis.com/v1alpha/properties/555/accessBindings/b1");
+    expect(removed.url).toBe("https://analyticsadmin.googleapis.com/v1alpha/properties/555/accessBindings/AYVX2ex+b1/Q=="); // Google's ids contain = + /
     expect(g.calls.indexOf(removed)).toBeGreaterThan(g.calls.indexOf(links[1]!));
 
     const row = (await pool.query(`select * from public.ga4_export_links where connection_id = $1`, [conn])).rows[0];
@@ -98,7 +99,7 @@ describe("turning on GA4 full data", () => {
     const g = fakeGoogle({ linkFails: true });
     const r = await linkGa4Export(pool, deps(g.f as never), { connectionId: conn, userId: U.id, refreshToken: "1//user" });
     expect(r.status).toBe("failed");
-    expect(g.calls.some((c) => c.method === "DELETE" && c.url.endsWith("/accessBindings/b1"))).toBe(true);
+    expect(g.calls.some((c) => c.method === "DELETE" && c.url.endsWith("/accessBindings/AYVX2ex+b1/Q=="))).toBe(true);
     const row = (await pool.query(`select status, error from public.ga4_export_links where connection_id = $1`, [conn])).rows[0];
     expect(row.status).toBe("failed");
     expect(row.error).toMatch(/administrator/i);
@@ -109,6 +110,15 @@ describe("turning on GA4 full data", () => {
     const r = await linkGa4Export(pool, deps(g.f as never), { connectionId: conn, userId: U.id, refreshToken: "1//user" });
     expect(r).toMatchObject({ status: "failed", message: expect.stringMatching(/Administrator role/) });
     expect(g.calls.some((c) => c.url.endsWith("/bigQueryLinks") && c.method === "POST")).toBe(false);
+  });
+
+  it("if the temporary access cannot be removed at once, the next load removes it", async () => {
+    await linkGa4Export(pool, deps(fakeGoogle({ unbindFails: true }).f as never), { connectionId: conn, userId: U.id, refreshToken: "1//user" });
+    expect((await loadConnection(pool, U.id, conn))!.export?.access_pending).toBe(true);
+    const g = fakeGoogle();
+    expect(await retryPendingAccessRemoval(pool, { fetch: g.f as never, google: { clientId: "id", clientSecret: "s" }, encryptionKey: KEY }, conn)).toBe(true);
+    expect(g.calls.find((c) => c.method === "DELETE")!.url).toContain("/accessBindings/AYVX2ex+b1/Q==");
+    expect((await loadConnection(pool, U.id, conn))!.export?.access_pending).toBe(false);
   });
 
   it("turning off removes the link in GA4, deletes the exported events and forgets the grant", async () => {

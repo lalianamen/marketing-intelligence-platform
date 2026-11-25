@@ -30,7 +30,7 @@ export interface ConnectionDetail {
   schedule: { frequency: "daily" | "manual"; local_time: string; timezone: string; enabled: boolean; next_run_at: string | null } | null;
   access: "manage" | "read";
   /** GA4's own BigQuery export for this connection (ADR 0006), when turned on. */
-  export: { status: "linking" | "waiting_first_export" | "active" | "failed"; first: string | null; last: string | null; error: string | null; linked_at: string | null } | null;
+  export: { status: "linking" | "waiting_first_export" | "active" | "failed"; first: string | null; last: string | null; error: string | null; linked_at: string | null; access_pending?: boolean } | null;
 }
 
 export async function loadConnection(db: Queryable, userId: string, connectionId: string): Promise<ConnectionDetail | null> {
@@ -40,7 +40,7 @@ export async function loadConnection(db: Queryable, userId: string, connectionId
             c.last_synced_at, c.data_as_of::text as data_as_of, c.last_error, c.created_at, c.settings, c.activated_at,
             s.frequency, to_char(s.local_time, 'HH24:MI') as local_time, s.timezone, s.enabled, s.next_run_at
             , x.status as export_status, x.first_export_date::text as export_first, x.last_export_date::text as export_last,
-            x.error as export_error, x.linked_at as export_linked_at
+            x.error as export_error, x.linked_at as export_linked_at, x.pending_binding is not null as export_access_pending
        from public.company_connections c
        left join public.sync_schedules s on s.connection_id = c.id
        left join public.ga4_export_links x on x.connection_id = c.id and x.status <> 'removed'
@@ -67,6 +67,7 @@ export async function loadConnection(db: Queryable, userId: string, connectionId
           last: row.export_last,
           error: row.export_error,
           linked_at: row.export_linked_at ? new Date(row.export_linked_at).toISOString() : null,
+          access_pending: Boolean(row.export_access_pending),
         }
       : null,
   };

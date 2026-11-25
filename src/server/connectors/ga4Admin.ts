@@ -52,7 +52,7 @@ export async function addPropertyEditor(f: FetchLike, userToken: string, propert
 
 /** Removes an access binding created by addPropertyEditor. */
 export async function removeAccessBinding(f: FetchLike, userToken: string, bindingName: string): Promise<void> {
-  if (!/^properties\/\d{1,20}\/accessBindings\/[A-Za-z0-9_-]+$/.test(bindingName)) throw new ConnectorError("invalid_request", "ga4 admin: bad binding name");
+  if (!/^properties\/\d{1,20}\/accessBindings\/[A-Za-z0-9_=+\/-]{1,300}$/.test(bindingName)) throw new ConnectorError("invalid_request", "ga4 admin: bad binding name");
   await call(f, "DELETE", `${ADMIN}/v1alpha/${bindingName}`, userToken);
 }
 
@@ -81,7 +81,7 @@ export async function createBigQueryLink(f: FetchLike, token: string, propertyId
 }
 
 export async function deleteBigQueryLink(f: FetchLike, token: string, linkName: string): Promise<void> {
-  if (!/^properties\/\d{1,20}\/bigQueryLinks\/[A-Za-z0-9_-]+$/.test(linkName)) throw new ConnectorError("invalid_request", "ga4 admin: bad link name");
+  if (!/^properties\/\d{1,20}\/bigQueryLinks\/[A-Za-z0-9_=+\/-]{1,300}$/.test(linkName)) throw new ConnectorError("invalid_request", "ga4 admin: bad link name");
   await call(f, "DELETE", `${ADMIN}/v1alpha/${linkName}`, token);
 }
 

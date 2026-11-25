@@ -13,6 +13,7 @@ import { getResourceForCompany, toDatasetRef } from "../registry/registry";
 import { recordUsage } from "../usage/usage";
 import { type Warehouse, WarehouseError, type WarehouseProvider } from "../warehouse/types";
 import { computeSyncWindow } from "./window";
+import { retryPendingAccessRemoval } from "../ga4export/retry";
 import { addDays } from "../../lib/dates";
 
 // Shared sync engine for every source:
@@ -167,6 +168,13 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
         ).rows[0];
         if (!secret || !deps.cfg.tokenEncryptionKey) throw new ConnectorError("auth_expired", "no stored authorization");
         credentials = { refreshToken: decryptSecret(secret.ciphertext, deps.cfg.tokenEncryptionKey, conn.id) };
+      }
+      if (conn.provider_id === "ga4" && conn.mode === "live" && deps.cfg.google.clientId && deps.cfg.tokenEncryptionKey) {
+        await retryPendingAccessRemoval(db, {
+          fetch: deps.fetchImpl,
+          google: { clientId: deps.cfg.google.clientId, clientSecret: deps.cfg.google.clientSecret ?? "" },
+          encryptionKey: deps.cfg.tokenEncryptionKey,
+        }, conn.id).catch(() => false);
       }
       const ga4Export = conn.provider_id === "ga4" && conn.mode === "live" && wh.provider === "bigquery" ? await exportContext(db, wh, conn.id) : undefined;
       const fetched = await connector.fetchDaily({
