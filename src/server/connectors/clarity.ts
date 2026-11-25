@@ -49,11 +49,20 @@ export async function fetchClarityInsights(f: FetchLike, token: string, dimensio
  */
 export function clarityRows(blocks: InsightBlock[], dimensions: string[]): Record<string, unknown>[] {
   const apiNames = dimensions.map((d) => CLARITY_DIMENSIONS[d]!);
+  // The answer's keys are not always spelled like the request ("URL" vs "Url", "Country/Region" vs "CountryRegion"):
+  // match them ignoring case and punctuation.
+  const norm = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const wanted = apiNames.map(norm);
   const rows = new Map<string, Record<string, unknown>>();
   for (const b of blocks) {
     const metric = String(b.metricName ?? "metric").replace(SAFE, "").slice(0, 60) || "metric";
     for (const info of b.information ?? []) {
-      const dims = apiNames.map((a) => String(info[a] ?? "(not set)"));
+      const keyOf = (i: number) => Object.keys(info).find((k) => norm(k) === wanted[i]);
+      const dims = apiNames.map((_, i) => {
+        const k = keyOf(i);
+        const v = k === undefined ? null : info[k];
+        return v === null || v === undefined || v === "" ? "(not set)" : String(v);
+      });
       const key = dims.join("\u001f");
       let row = rows.get(key);
       if (!row) {
@@ -63,7 +72,7 @@ export function clarityRows(blocks: InsightBlock[], dimensions: string[]): Recor
       }
       const values: Record<string, unknown> = (row[metric] as Record<string, unknown>) ?? {};
       for (const [k, v] of Object.entries(info)) {
-        if (apiNames.includes(k)) continue;
+        if (wanted.includes(norm(k))) continue;
         const field = k.replace(SAFE, "").slice(0, 60);
         if (field && (typeof v === "string" || typeof v === "number" || typeof v === "boolean" || v === null)) values[field] = v;
       }

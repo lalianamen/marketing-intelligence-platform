@@ -46,4 +46,9 @@ describe("Microsoft Clarity connector", () => {
     })).rejects.toMatchObject({ code: "quota_exceeded" });
     expect(clarityRows([], [])).toEqual([]);
   });
+
+  it("dimension keys in the answer are matched ignoring case and punctuation", () => {
+    const rows = clarityRows([{ metricName: "Traffic", information: [{ totalSessionCount: "3", Url: "https://licena.us/pricing", CountryRegion: "United States" }] }], ["url", "country"]);
+    expect(rows).toEqual([{ url: "https://licena.us/pricing", country: "United States", Traffic: { totalSessionCount: "3" } }]);
+  });
 });
