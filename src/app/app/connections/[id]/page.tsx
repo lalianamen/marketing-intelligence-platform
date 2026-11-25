@@ -327,7 +327,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
             <table className="w-full text-left text-sm">
               <thead className="text-xs uppercase text-gray-500"><tr><th className="py-2">When</th><th>Type</th><th>Days</th><th>Rows</th><th>Result</th></tr></thead>
               <tbody className="divide-y divide-gray-100">
-                {runs.map((r) => (
+                {runs.slice(0, 3).map((r) => (
                   <tr key={r.id} data-testid="sync-run">
                     <td className="py-2">{fmtDateTime(r.created_at.toISOString(), tz)}</td>
                     <td>{r.trigger === "backfill" ? "history" : r.trigger.replace("_", " ")}</td>
