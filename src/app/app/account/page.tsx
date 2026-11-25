@@ -2,7 +2,8 @@ import { getAppContext } from "@/server/appContext";
 import { getUser } from "@/server/supabase/server";
 import { googleOAuthConfigured, loadConfig } from "@/server/config";
 import { Badge, Button, Card, Field, Notice } from "@/components/ui";
-import { renameWorkspaceAction } from "../actions";
+import { renameWorkspaceAction, setThemeAction } from "../actions";
+import { cookies } from "next/headers";
 
 export default async function AccountPage({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string }> }) {
   const sp = await searchParams;
@@ -26,6 +27,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
     usageByKind.set(u.kind, e);
   }
   const name = (id: string) => ctx.companies.find((c) => c.id === id)?.name ?? id;
+  const theme = (await cookies()).get("theme")?.value ?? "light";
 
   return (
     <div className="space-y-6">
@@ -51,6 +53,20 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             </form>
           ) : <p className="text-sm">{ctx.workspace.name}</p>}
           <p className="mt-3 text-xs text-gray-500">Inviting team members and client viewers is planned for a later phase.</p>
+        </Card>
+        <Card title="Appearance">
+          <form action={setThemeAction} id="appearance" className="space-y-3 text-sm" data-testid="appearance">
+            <fieldset className="flex flex-wrap gap-4">
+              <legend className="mb-2 text-xs text-gray-500">Theme</legend>
+              {([["light", "Light"], ["dark", "Dark"], ["system", "Same as my device"]] as const).map(([v, label]) => (
+                <label key={v} className="flex cursor-pointer items-center gap-2">
+                  <input type="radio" name="theme" value={v} defaultChecked={theme === v} />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+            <Button variant="secondary">Save</Button>
+          </form>
         </Card>
       </div>
 

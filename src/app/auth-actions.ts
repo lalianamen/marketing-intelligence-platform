@@ -1,6 +1,7 @@
 "use server";
 
-import { headers } from "next/headers";
+
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPool } from "@/server/db";
 import { supabaseServer } from "@/server/supabase/server";
@@ -59,10 +60,15 @@ export async function signInAction(form: FormData): Promise<void> {
   const password = String(form.get("password") ?? "");
   if (!(await allow(`signin:ip:${await clientIp()}`, 30, 300))) back("/login", { error: "Too many attempts. Please wait a few minutes." });
   const supabase = await supabaseServer();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     if (/not confirmed/i.test(error.message)) redirect(`/check-email?email=${encodeURIComponent(email)}`);
     back("/login", { error: "Email or password is incorrect." });
+  }
+  // The account's appearance follows the user to every browser they sign in on.
+  const theme = data.user?.user_metadata?.theme;
+  if (theme === "light" || theme === "dark" || theme === "system") {
+    (await cookies()).set("theme", theme, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax", httpOnly: true, secure: process.env.NODE_ENV === "production" });
   }
   redirect("/app/companies");
 }

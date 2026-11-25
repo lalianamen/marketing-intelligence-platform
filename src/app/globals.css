@@ -32,3 +32,137 @@ body {
 
 /* Full-screen table: the scroll area uses the whole window height. */
 .raw-expanded .raw-scroll { max-height: calc(100vh - 16rem); }
+
+/* Dark theme (Account settings → Appearance). The palette variables Tailwind
+   utilities read are swapped, so every page follows without per-page classes.
+   html.dark = always dark; html.theme-system = follow the device setting. */
+html.dark {
+  --color-white: #151a21;
+  --color-gray-50: #1b2029;
+  --color-gray-100: #232a35;
+  --color-gray-200: #2e3643;
+  --color-gray-300: #3d4757;
+  --color-gray-400: #6b7686;
+  --color-gray-500: #9aa4b2;
+  --color-gray-600: #b4bcc8;
+  --color-gray-700: #c9d0da;
+  --color-gray-800: #dde2e9;
+  --color-gray-900: #eef1f5;
+  --color-gray-950: #f8fafc;
+  --color-brand-50: #13233f;
+  --color-brand-100: #1a3157;
+  --color-brand-200: #22427a;
+  --color-brand-300: #2f5aa6;
+  --color-brand-500: #4f8af0;
+  --color-brand-600: #3b76e0;
+  --color-brand-700: #8db5ff;
+  --color-green-50: #10261b;
+  --color-green-100: #153523;
+  --color-green-200: #1f4d33;
+  --color-green-300: #2d6b47;
+  --color-green-600: #2fa463;
+  --color-green-700: #7fd9a4;
+  --color-green-800: #9de6bb;
+  --color-green-900: #c4f2d6;
+  --color-red-50: #2c1517;
+  --color-red-200: #5c2327;
+  --color-red-300: #7a2c31;
+  --color-red-600: #e5484d;
+  --color-red-700: #ff8b8f;
+  --color-red-800: #ffa9ac;
+  --color-red-900: #ffd0d2;
+  --color-amber-50: #2a2110;
+  --color-amber-200: #5a4517;
+  --color-amber-300: #7a5c1c;
+  --color-amber-600: #d99a26;
+  --color-amber-700: #f5c060;
+  --color-amber-800: #f8cf80;
+  --color-amber-900: #fbe0a8;
+  --color-amber-950: #fdeccc;
+  --color-blue-50: #10213a;
+  --color-blue-100: #152b4a;
+  --color-blue-200: #1d3a63;
+  --color-blue-600: #3b82f6;
+  --color-blue-800: #9cc3ff;
+  --color-blue-900: #c6dcff;
+
+  color-scheme: dark;
+  & body { background: #0e1116; color: #e6e9ee; }
+  /* White text stays white on coloured buttons; dark buttons stay dark. */
+  & .text-white { color: #ffffff; }
+  & .bg-gray-900 { background-color: #3d4757; }
+  & .hover\:bg-gray-800:hover { background-color: #4b5568; }
+  & .hover\:bg-brand-700:hover { background-color: #2f63c4; }
+  & .hover\:bg-red-700:hover { background-color: #c93b40; }
+  & .scrollbar-visible { scrollbar-color: #4b5568 #1b2029; }
+  & .scrollbar-visible::-webkit-scrollbar-track { background: #1b2029; }
+  & .scrollbar-visible::-webkit-scrollbar-thumb { background: #4b5568; border-color: #1b2029; }
+  & input, & select, & textarea { background-color: #1b2029; color: #e6e9ee; }
+  & dialog { background-color: #151a21; color: #e6e9ee; }
+}
+@media (prefers-color-scheme: dark) {
+  html.theme-system {
+  --color-white: #151a21;
+  --color-gray-50: #1b2029;
+  --color-gray-100: #232a35;
+  --color-gray-200: #2e3643;
+  --color-gray-300: #3d4757;
+  --color-gray-400: #6b7686;
+  --color-gray-500: #9aa4b2;
+  --color-gray-600: #b4bcc8;
+  --color-gray-700: #c9d0da;
+  --color-gray-800: #dde2e9;
+  --color-gray-900: #eef1f5;
+  --color-gray-950: #f8fafc;
+  --color-brand-50: #13233f;
+  --color-brand-100: #1a3157;
+  --color-brand-200: #22427a;
+  --color-brand-300: #2f5aa6;
+  --color-brand-500: #4f8af0;
+  --color-brand-600: #3b76e0;
+  --color-brand-700: #8db5ff;
+  --color-green-50: #10261b;
+  --color-green-100: #153523;
+  --color-green-200: #1f4d33;
+  --color-green-300: #2d6b47;
+  --color-green-600: #2fa463;
+  --color-green-700: #7fd9a4;
+  --color-green-800: #9de6bb;
+  --color-green-900: #c4f2d6;
+  --color-red-50: #2c1517;
+  --color-red-200: #5c2327;
+  --color-red-300: #7a2c31;
+  --color-red-600: #e5484d;
+  --color-red-700: #ff8b8f;
+  --color-red-800: #ffa9ac;
+  --color-red-900: #ffd0d2;
+  --color-amber-50: #2a2110;
+  --color-amber-200: #5a4517;
+  --color-amber-300: #7a5c1c;
+  --color-amber-600: #d99a26;
+  --color-amber-700: #f5c060;
+  --color-amber-800: #f8cf80;
+  --color-amber-900: #fbe0a8;
+  --color-amber-950: #fdeccc;
+  --color-blue-50: #10213a;
+  --color-blue-100: #152b4a;
+  --color-blue-200: #1d3a63;
+  --color-blue-600: #3b82f6;
+  --color-blue-800: #9cc3ff;
+  --color-blue-900: #c6dcff;
+
+  color-scheme: dark;
+  & body { background: #0e1116; color: #e6e9ee; }
+  /* White text stays white on coloured buttons; dark buttons stay dark. */
+  & .text-white { color: #ffffff; }
+  & .bg-gray-900 { background-color: #3d4757; }
+  & .hover\:bg-gray-800:hover { background-color: #4b5568; }
+  & .hover\:bg-brand-700:hover { background-color: #2f63c4; }
+  & .hover\:bg-red-700:hover { background-color: #c93b40; }
+  & .scrollbar-visible { scrollbar-color: #4b5568 #1b2029; }
+  & .scrollbar-visible::-webkit-scrollbar-track { background: #1b2029; }
+  & .scrollbar-visible::-webkit-scrollbar-thumb { background: #4b5568; border-color: #1b2029; }
+  & input, & select, & textarea { background-color: #1b2029; color: #e6e9ee; }
+  & dialog { background-color: #151a21; color: #e6e9ee; }
+  }
+}

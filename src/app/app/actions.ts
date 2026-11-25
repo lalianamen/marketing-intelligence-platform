@@ -404,3 +404,14 @@ export async function turnOffGa4ExportAction(form: FormData): Promise<void> {
   revalidatePath("/app", "layout");
   redirect(`/app/connections/${id}?export_off=1${r.warning ? "&export_error=" + encodeURIComponent(r.warning) : ""}#full-data`);
 }
+
+/** Appearance (light / dark / same as the device), saved for the account and in a cookie for this browser. */
+export async function setThemeAction(form: FormData): Promise<void> {
+  const { supabase } = await requireUser();
+  const theme = String(form.get("theme") ?? "");
+  if (!["light", "dark", "system"].includes(theme)) redirect("/app/account?error=" + encodeURIComponent("Unknown theme."));
+  await supabase.auth.updateUser({ data: { theme } });
+  (await cookies()).set("theme", theme, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax", httpOnly: true, secure: process.env.NODE_ENV === "production" });
+  revalidatePath("/", "layout");
+  redirect("/app/account?saved=1#appearance");
+}
