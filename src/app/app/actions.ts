@@ -319,6 +319,12 @@ export async function saveGa4GroupsAction(form: FormData): Promise<void> {
     back(/GA4 allows/.test(m) ? m : friendly(m));
   }
   if (!conn?.activated_at) redirect(`/app/connections/${id}?setup=1&groups_saved=1#ga4-reports`);
+  // Clarity cannot give past days: deleting them would lose history for good, so a change applies to new days only.
+  const provider = (await db.query<{ provider_id: string }>(`select provider_id from public.company_connections where id = $1`, [id])).rows[0]?.provider_id;
+  if (provider === "microsoft_clarity") {
+    revalidatePath("/app", "layout");
+    redirect(`/app/connections/${id}?groups_saved=1#ga4-reports`);
+  }
   if (!changed) redirect(`/app/connections/${id}?groups_unchanged=1#ga4-reports`);
   const yesterday = addDays(localDate(new Date(), conn!.timezone), -1);
   let period: { from: string; to: string };

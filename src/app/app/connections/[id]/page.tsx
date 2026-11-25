@@ -135,8 +135,13 @@ export default async function ConnectionPage({ params, searchParams }: { params:
             <p className="text-sm text-gray-600">Nothing has been loaded yet. Choose what to collect, for which period and how often, then press Start loading.</p>
           </div>
           <Notice tone="amber">
-            Switch on all the data you need <strong>now</strong>, before the first load. If you change the data later, all data of
-            this connector is deleted and only the last 30 days are loaded again — and a new load takes time.
+            {isClarity ? (
+              <>Choose the breakdowns <strong>now</strong>, before the first load. Clarity cannot give past days, so a later change
+              applies only to new days; the days already loaded keep their columns.</>
+            ) : (
+              <>Switch on all the data you need <strong>now</strong>, before the first load. If you change the data later, all data of
+              this connector is deleted and only the last 30 days are loaded again — and a new load takes time.</>
+            )}
           </Notice>
           <ol className="space-y-1 text-sm text-gray-700">
             <li><strong>1. What to collect</strong> — {catalog ? "switch groups on in the list below; their columns are added to the one table (the dashboard columns are always included)." : "this source has one standard table."}</li>
@@ -151,6 +156,8 @@ export default async function ConnectionPage({ params, searchParams }: { params:
           <p className="mt-2 text-xs text-gray-500">
             {inSetup
               ? "Tick every column you want in the table before the first load — a whole group with its switch, or single fields."
+              : isClarity
+              ? "Tick up to 3 breakdowns, then press Save. The change applies to new days; days already loaded keep their columns."
               : "Tick the columns you want — a whole group with its switch, or single fields. Choose everything first, then press Save: only then all data of this connector is deleted and the last 30 days are loaded again."}
             {" "}Fewer breakdowns give fewer, larger rows: a removed breakdown is added up into the remaining ones.
             {catalog.maxDimensions !== null && !exportLiftsLimits(c) && <>{" "}GA4 allows at most {catalog.maxDimensions} breakdowns and {catalog.maxMetrics} numbers in one table.</>}
@@ -213,7 +220,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
               )}
             </section>
           )}
-          {sp.groups_saved && <div className="mt-3"><Notice tone="green">Saved. These columns will be in the table from the first load.</Notice></div>}
+          {sp.groups_saved && <div className="mt-3"><Notice tone="green">{inSetup ? "Saved. These columns will be in the table from the first load." : "Saved. New days get these columns; days already loaded keep theirs (Clarity cannot reload the past)."}</Notice></div>}
           {sp.groups_unchanged && <div className="mt-3"><Notice tone="blue">Nothing changed, so nothing was deleted or reloaded.</Notice></div>}
           <Ga4GroupPicker
             key={enabledReports.join(",")}
@@ -223,7 +230,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
             provider={c.provider_id}
             saved={enabledReports}
             canManage={canManage}
-            reloadOnSave={!inSetup}
+            reloadOnSave={!inSetup && !isClarity}
             unlimited={exportLiftsLimits(c)}
           />
         </details>
