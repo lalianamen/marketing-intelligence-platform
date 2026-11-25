@@ -350,6 +350,15 @@ export class LocalWarehouse implements Warehouse {
     }
   }
 
+  // GA4's BigQuery export exists only in real BigQuery.
+  async ga4ExportRange(): Promise<{ first: string; last: string } | null> {
+    return null;
+  }
+
+  async queryGa4Export(): Promise<{ rows: Record<string, string>[]; stats: QueryStats }> {
+    throw new WarehouseError("invalid", "the GA4 BigQuery export is available only with the BigQuery warehouse");
+  }
+
   async rebuildMart(ref: DatasetRef, range: DateRange): Promise<{ stats: QueryStats }> {
     const s = schema(ref);
     const client = await this.pool.connect();

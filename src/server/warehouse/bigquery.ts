@@ -1,3 +1,4 @@
+import { exportTableDate, ga4ExportSql } from "../ga4export/sql";
 import type { BigQuery } from "@google-cloud/bigquery";
 import type { CampaignRow, MartRow, NormalizedRow, RawRecord } from "../../lib/model";
 import { assertSafeIdentifier, assertSafeProjectId } from "./datasetId";
@@ -322,6 +323,51 @@ export class BigQueryWarehouse implements Warehouse {
     for (const t of ["raw_records", "norm_campaign_daily", "mart_daily_source"]) {
       await this.run(ref, `TRUNCATE TABLE ${this.fq(ref, t)}`);
     }
+  }
+
+  async ga4ExportRange(exportRef: DatasetRef): Promise<{ first: string; last: string } | null> {
+    try {
+      const res = await this.run(
+        exportRef,
+        `SELECT MIN(table_name) AS first, MAX(table_name) AS last
+         FROM \`${assertSafeProjectId(exportRef.projectId)}.${assertSafeIdentifier(exportRef.datasetId, "dataset id")}.INFORMATION_SCHEMA.TABLES\`
+         WHERE REGEXP_CONTAINS(table_name, r'^events_[0-9]{8}$')`,
+      );
+      const first = exportTableDate(String(res.rows[0]?.first ?? ""));
+      const last = exportTableDate(String(res.rows[0]?.last ?? ""));
+      return first && last ? { first, last } : null;
+    } catch (err) {
+      if ((err as WarehouseError).code === "not_found") return null;
+      throw err;
+    }
+  }
+
+  async queryGa4Export(
+    exportRef: DatasetRef,
+    q: { range: DateRange; dimensions: string[]; metrics: string[]; keyEvents: string[] },
+  ): Promise<{ rows: Record<string, string>[]; stats: QueryStats }> {
+    // Visits can start late on the day before: read one extra day of events before the window.
+    const suffix = (d: string) => d.replace(/-/g, "");
+    const before = new Date(`${q.range.from}T00:00:00Z`);
+    before.setUTCDate(before.getUTCDate() - 1);
+    const res = await this.run(
+      exportRef,
+      ga4ExportSql(`\`${assertSafeProjectId(exportRef.projectId)}.${assertSafeIdentifier(exportRef.datasetId, "dataset id")}.events_*\``, { dimensions: q.dimensions, metrics: q.metrics }),
+      {
+        from_suffix: suffix(before.toISOString().slice(0, 10)),
+        to_suffix: suffix(q.range.to),
+        from_date: q.range.from,
+        to_date: q.range.to,
+        key_events: q.keyEvents.filter((k) => /^[A-Za-z0-9_]{1,64}$/.test(k)),
+      },
+      { from_suffix: "STRING", to_suffix: "STRING", from_date: "DATE", to_date: "DATE", key_events: ["STRING"] },
+    );
+    const rows = res.rows.map((r) => {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(r)) out[k] = v === null || v === undefined ? "" : typeof v === "object" && "value" in (v as object) ? String((v as { value: unknown }).value) : String(v);
+      return out;
+    });
+    return { rows, stats: res.stats };
   }
 
   async deleteDataset(ref: DatasetRef): Promise<"deleted" | "not_found"> {

@@ -29,6 +29,8 @@ export interface ConnectionDetail {
   activated_at: string | null;
   schedule: { frequency: "daily" | "manual"; local_time: string; timezone: string; enabled: boolean; next_run_at: string | null } | null;
   access: "manage" | "read";
+  /** GA4's own BigQuery export for this connection (ADR 0006), when turned on. */
+  export: { status: "linking" | "waiting_first_export" | "active" | "failed"; first: string | null; last: string | null; error: string | null; linked_at: string | null } | null;
 }
 
 export async function loadConnection(db: Queryable, userId: string, connectionId: string): Promise<ConnectionDetail | null> {
@@ -37,8 +39,11 @@ export async function loadConnection(db: Queryable, userId: string, connectionId
     `select c.id, c.company_id, c.workspace_id, c.provider_id, c.mode, c.status, c.external_account_id, c.external_account_name,
             c.last_synced_at, c.data_as_of::text as data_as_of, c.last_error, c.created_at, c.settings, c.activated_at,
             s.frequency, to_char(s.local_time, 'HH24:MI') as local_time, s.timezone, s.enabled, s.next_run_at
+            , x.status as export_status, x.first_export_date::text as export_first, x.last_export_date::text as export_last,
+            x.error as export_error, x.linked_at as export_linked_at
        from public.company_connections c
        left join public.sync_schedules s on s.connection_id = c.id
+       left join public.ga4_export_links x on x.connection_id = c.id and x.status <> 'removed'
       where c.id = $1 and c.status <> 'disconnected'`,
     [connectionId],
   );
@@ -55,7 +60,21 @@ export async function loadConnection(db: Queryable, userId: string, connectionId
       ? { frequency: row.frequency, local_time: row.local_time, timezone: row.timezone, enabled: row.enabled, next_run_at: row.next_run_at ? new Date(row.next_run_at).toISOString() : null }
       : null,
     access,
+    export: row.export_status
+      ? {
+          status: row.export_status,
+          first: row.export_first,
+          last: row.export_last,
+          error: row.export_error,
+          linked_at: row.export_linked_at ? new Date(row.export_linked_at).toISOString() : null,
+        }
+      : null,
   };
+}
+
+/** With GA4's BigQuery export on, the table is built from events: no limit on columns. */
+export function exportLiftsLimits(c: Pick<ConnectionDetail, "export">): boolean {
+  return c.export?.status === "waiting_first_export" || c.export?.status === "active";
 }
 
 async function requireManage(db: Queryable, userId: string, connectionId: string): Promise<ConnectionDetail> {
@@ -203,7 +222,7 @@ export async function setGa4Groups(
   if (items.some((g) => !isGa4SelectionItem(g))) throw new Error("unknown report");
   const current = sanitizeGa4Selection(c.settings?.ga4_reports);
   const next = sanitizeGa4Selection(items);
-  const problem = ga4SelectionProblem(next);
+  const problem = exportLiftsLimits(c) ? null : ga4SelectionProblem(next);
   if (problem) throw new Error(problem);
   const added = next.filter((g) => !current.includes(g));
   const removed = current.filter((g) => !next.includes(g));
@@ -312,6 +331,11 @@ export async function clearConnectorForReload(
     [c.workspace_id, c.company_id, userId, c.id],
   );
   void from;
+  // With the GA4 export, everything exported so far is rebuilt from BigQuery (no GA4 quota; up to 400 days).
+  if (c.export?.status === "active" && c.export.first) {
+    const earliest = addDaysIso(yesterday, -399);
+    return { from: c.export.first > earliest ? c.export.first : earliest, to: yesterday };
+  }
   // After a change of the collected data, only the last 30 complete days are loaded again.
   return { from: addDaysIso(yesterday, -29), to: yesterday };
 }

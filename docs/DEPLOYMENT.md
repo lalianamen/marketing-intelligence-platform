@@ -83,3 +83,21 @@ No service-account key files are created or stored anywhere.
 - [ ] Upload the sample CSV; KPIs match; export works
 - [ ] `GET /api/jobs/run` without the secret returns 401
 - [ ] `npm run check:bundle` passes on the deployed build; no secrets in Vercel logs
+
+
+## GA4 full data (BigQuery export) — one-time project setup
+
+The platform service account creates GA4 export links (ADR 0006). Google requires these project permissions for it;
+run once in Cloud Shell of the platform project:
+
+```bash
+PROJECT_ID=<platform project id>
+SA=<value of GCP_SERVICE_ACCOUNT_EMAIL>
+gcloud services enable analyticsadmin.googleapis.com --project $PROJECT_ID
+gcloud iam roles create ga4ExportLinker --project $PROJECT_ID --title "GA4 export linker" \
+  --permissions resourcemanager.projects.get,resourcemanager.projects.getIamPolicy,resourcemanager.projects.setIamPolicy,serviceusage.services.get,serviceusage.services.enable
+gcloud projects add-iam-policy-binding $PROJECT_ID --member serviceAccount:$SA --role projects/$PROJECT_ID/roles/ga4ExportLinker
+```
+
+The OAuth consent screen must list the scopes `analytics.edit` and `analytics.manage.users` before public launch
+(Google verification). In Testing mode they work for test users.

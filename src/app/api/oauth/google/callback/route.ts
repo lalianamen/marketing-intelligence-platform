@@ -7,6 +7,9 @@ import { googleOAuthConfigured, loadConfig } from "@/server/config";
 import { getCompanyAccess } from "@/server/auth/authz";
 import { decryptSecret, encryptSecret, redact, sha256Hex } from "@/server/crypto";
 import { type DiscoveredAccount, exchangeCode, GA4_SCOPE, GOOGLE_ADS_SCOPE, listAdsCustomers, listGa4Properties, refreshAccessToken } from "@/server/connectors/google";
+import { GA4_EDIT_SCOPE, GA4_MANAGE_USERS_SCOPE } from "@/server/connectors/ga4Admin";
+import { linkGa4Export } from "@/server/ga4export/link";
+import { platformAccessToken, platformServiceAccountEmail } from "@/server/warehouse";
 
 // OAuth callback: validates single-use state bound to the same signed-in user,
 // re-checks company authorization, exchanges the code (PKCE), stores ONLY the
@@ -33,7 +36,7 @@ export async function GET(request: NextRequest) {
       [sha256Hex(state), user.id],
     )
   ).rows[0] as
-    | { company_id: string; workspace_id: string; provider_id: "ga4" | "google_ads"; code_verifier_ciphertext: string; external_account_id: string }
+    | { company_id: string; workspace_id: string; provider_id: "ga4" | "google_ads"; code_verifier_ciphertext: string; external_account_id: string; purpose: string; connection_id: string | null }
     | undefined;
   if (!st) return back("This connection attempt expired. Please try again.");
   if ((await getCompanyAccess(db, user.id, st.company_id)) !== "manage") return back("Not found, or you do not have access.");
@@ -48,6 +51,26 @@ export async function GET(request: NextRequest) {
   } catch {
     return back("Google did not accept the authorization. Please try again.");
   }
+  if (st.purpose === "ga4_export" && st.connection_id) {
+    const page = (q: string) => NextResponse.redirect(new URL(`/app/connections/${st.connection_id}?${q}#full-data`, cfg.appUrl));
+    const missing = [GA4_SCOPE, GA4_EDIT_SCOPE, GA4_MANAGE_USERS_SCOPE].filter((s) => !tokens.scopes.includes(s));
+    if (missing.length) return page("export_error=" + encodeURIComponent("Please allow all the permissions on Google's screen (tick every box) to turn on full data."));
+    if (!tokens.refreshToken) return page("export_error=" + encodeURIComponent("Google did not return a long-lived authorization. Remove the app's access in your Google account and try again."));
+    const sa = platformServiceAccountEmail();
+    if (!sa || !cfg.bigquery.projectId || cfg.warehouseMode !== "bigquery") {
+      return page("export_error=" + encodeURIComponent("Full data needs the platform's BigQuery, which is not set up in this environment."));
+    }
+    const result = await linkGa4Export(db, {
+      google: { clientId: cfg.google.clientId!, clientSecret: cfg.google.clientSecret! },
+      encryptionKey: cfg.tokenEncryptionKey!,
+      project: cfg.bigquery.projectId,
+      location: cfg.bigquery.location,
+      serviceAccountEmail: sa,
+      platformToken: platformAccessToken,
+    }, { connectionId: st.connection_id, userId: user.id, refreshToken: tokens.refreshToken });
+    return page(result.status === "failed" ? "export_error=" + encodeURIComponent(result.message) : "export=started");
+  }
+
   const required = st.provider_id === "ga4" ? GA4_SCOPE : GOOGLE_ADS_SCOPE;
   if (!tokens.scopes.includes(required)) return back("The required permission was not granted. Please tick the box to allow access.");
   if (!tokens.refreshToken) return back("Google did not return a long-lived authorization. Remove the app's access in your Google account and try again.");

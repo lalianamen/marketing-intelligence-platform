@@ -156,6 +156,16 @@ Google user can read and connects it:
   for the dashboard, rows of one campaign and day are summed back, so totals do not change when columns are added.
 - Planned: plan tiers will mark groups as basic or extended; switching is then checked against the workspace plan.
 
+## GA4 full data (BigQuery export, ADR 0006)
+
+- Connector page → Full data → "Turn on full data": Google's consent screen with GA4 edit / manage-users permissions
+  (the Google account needs the Administrator role on the property). The platform service account is added to the
+  property, creates the daily export link to the platform project and is removed again; the page then shows
+  "waiting for the first day" until `events_YYYYMMDD` appears (usually within 24 h), then "on" with the exported range.
+- Exported days are built from events with any columns (no limit of 9 / 10); other days use the Data API.
+- "Turn off" or deleting the connector removes the link in GA4 and deletes `analytics_<property>`.
+- State: `public.ga4_export_links` (server only). Code: `src/server/ga4export/`, `src/server/connectors/ga4Admin.ts`.
+
 ## Future connectors: design notes, no access promised
 
 | Provider | Notes |

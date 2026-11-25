@@ -5,7 +5,7 @@ import { decryptSecret, redact } from "../crypto";
 import type { Queryable } from "../db";
 import { connectorFor } from "../connectors/factory";
 import type { FetchLike } from "../connectors/google";
-import { type Connector, ConnectorError } from "../connectors/types";
+import { type Connector, ConnectorError, type FetchContext } from "../connectors/types";
 import type { CsvRow } from "../ingestion/csv";
 import { normalizeCsvRows, normalizeProviderRecords } from "../ingestion/normalize";
 import type { ClaimedJob } from "../jobs/queue";
@@ -168,7 +168,9 @@ export async function processSyncRun(db: Queryable, run: RunContext["run"], deps
         if (!secret || !deps.cfg.tokenEncryptionKey) throw new ConnectorError("auth_expired", "no stored authorization");
         credentials = { refreshToken: decryptSecret(secret.ciphertext, deps.cfg.tokenEncryptionKey, conn.id) };
       }
+      const ga4Export = conn.provider_id === "ga4" && conn.mode === "live" && wh.provider === "bigquery" ? await exportContext(db, wh, conn.id) : undefined;
       const fetched = await connector.fetchDaily({
+        ga4Export,
         window,
         externalAccountId: conn.external_account_id ?? "",
         companyId: run.company_id,
@@ -319,4 +321,32 @@ export async function markConnectionFailure(db: Queryable, connectionId: string,
       where id = $1`,
     [connectionId, redact(message)],
   );
+}
+
+/**
+ * GA4 connections with GA4's own BigQuery export (ADR 0006): which days are exported,
+ * and a reader for them. Also moves the link from "waiting" to "active" once the
+ * first daily table appears.
+ */
+async function exportContext(db: Queryable, wh: Warehouse, connectionId: string): Promise<FetchContext["ga4Export"]> {
+  const link = (
+    await db.query<{ status: string; bq_project: string | null; bq_dataset: string | null; bq_location: string | null; key_events: string[] }>(
+      `select status, bq_project, bq_dataset, bq_location, key_events from public.ga4_export_links
+        where connection_id = $1 and status in ('waiting_first_export', 'active')`,
+      [connectionId],
+    )
+  ).rows[0];
+  if (!link?.bq_project || !link.bq_dataset) return undefined;
+  const exportRef = { provider: "bigquery" as const, projectId: link.bq_project, datasetId: link.bq_dataset, location: link.bq_location ?? "US" };
+  const range = await wh.ga4ExportRange(exportRef);
+  if (!range) return undefined;
+  await db.query(
+    `update public.ga4_export_links set status = 'active', first_export_date = $2, last_export_date = $3, updated_at = now() where connection_id = $1`,
+    [connectionId, range.first, range.last],
+  );
+  return {
+    first: range.first,
+    last: range.last,
+    query: async (r, fields) => (await wh.queryGa4Export(exportRef, { range: r, dimensions: fields.dimensions, metrics: fields.metrics, keyEvents: link.key_events ?? [] })).rows,
+  };
 }

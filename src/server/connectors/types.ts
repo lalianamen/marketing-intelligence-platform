@@ -44,6 +44,15 @@ export interface FetchContext {
   signal?: AbortSignal;
   /** Per-connection options, e.g. the GA4 groups the user switched on. */
   options?: { ga4Reports?: string[] };
+  /**
+   * GA4 only: days already in GA4's own BigQuery export (ADR 0006) and how to read them.
+   * Returns rows with the requested GA4 columns by name, values as strings.
+   */
+  ga4Export?: {
+    first: string;
+    last: string;
+    query: (range: { from: string; to: string }, fields: { dimensions: string[]; metrics: string[] }) => Promise<Record<string, string>[]>;
+  };
 }
 
 

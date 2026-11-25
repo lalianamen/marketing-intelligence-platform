@@ -3,7 +3,7 @@ import { getCompanyContext } from "@/server/appContext";
 import { getPool } from "@/server/db";
 import { loadConfig } from "@/server/config";
 import { getWarehouse } from "@/server/warehouse";
-import { loadConnection, loadRawPage, loadRuns } from "@/server/connections/manage";
+import { exportLiftsLimits, loadConnection, loadRawPage, loadRuns } from "@/server/connections/manage";
 import { modeBadge, PROVIDER_LABEL } from "@/server/companyStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { LoadStatus } from "@/components/LoadStatus";
@@ -19,7 +19,7 @@ import { ScrollX } from "@/components/ScrollX";
 import { Expandable } from "@/components/Expandable";
 import { GA4_GROUPS, GA4_MAX_DIMENSIONS, GA4_MAX_METRICS, ga4Fields, sanitizeGa4Selection } from "@/lib/ga4Catalog";
 import { Ga4GroupPicker } from "@/components/Ga4GroupPicker";
-import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, startLoadingAction, syncNowAction, saveGa4GroupsAction, updateScheduleAction } from "../../actions";
+import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, startLoadingAction, syncNowAction, saveGa4GroupsAction, turnOffGa4ExportAction, updateScheduleAction } from "../../actions";
 import { addDays, localDate } from "@/lib/dates";
 
 const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
@@ -141,9 +141,65 @@ export default async function ConnectionPage({ params, searchParams }: { params:
         </section>
       )}
 
+      {isGa4Live && !inSetup && (
+        <section id="full-data" className="rounded-xl border border-gray-200 bg-white p-5" data-testid="full-data">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">
+                Full data <span className="ml-1 text-sm font-normal text-gray-500">GA4 BigQuery export</span>{" "}
+                {c.export?.status === "active" ? <Badge tone="green">on</Badge> : c.export?.status === "waiting_first_export" ? <Badge tone="amber">waiting for the first day</Badge> : c.export?.status === "failed" ? <Badge tone="red">not turned on</Badge> : <Badge tone="gray">off</Badge>}
+              </h2>
+              <p className="mt-1 max-w-3xl text-sm text-gray-600">
+                Google copies every event of your site into the platform&apos;s BigQuery once a day. The table is then built from those events:
+                any columns together, no limit of {GA4_MAX_DIMENSIONS} breakdowns.
+              </p>
+            </div>
+            {canManage && (!c.export || c.export.status === "failed") && (
+              <a href={`/api/oauth/google/start?provider=ga4&purpose=ga4_export&company=${c.company_id}&connection=${c.id}`} className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700" data-testid="turn-on-full-data">
+                {c.export?.status === "failed" ? "Try again" : "Turn on full data"}
+              </a>
+            )}
+            {canManage && (c.export?.status === "active" || c.export?.status === "waiting_first_export") && (
+              <ConfirmButton
+                action={turnOffGa4ExportAction}
+                fields={{ connection_id: c.id }}
+                label="Turn off"
+                title="Turn off full data?"
+                lines={[
+                  "The export link is removed in GA4, and the exported events are deleted from the platform.",
+                  "The table keeps what is loaded now; new days come from the standard GA4 connection again (at most 9 breakdowns).",
+                ]}
+                confirmLabel="Turn off full data"
+                pendingLabel="Turning off…"
+              />
+            )}
+          </div>
+          {sp.export === "started" && <div className="mt-3"><Notice tone="green">Full data is turned on. Google sends the first day within about 24 hours; the platform picks it up automatically.</Notice></div>}
+          {sp.export_off && <div className="mt-3"><Notice tone="blue">Full data was turned off.</Notice></div>}
+          {(sp.export_error || c.export?.error) && <div className="mt-3"><Notice tone="red">{sp.export_error ?? c.export?.error}</Notice></div>}
+          {c.export?.status === "waiting_first_export" && (
+            <p className="mt-3 text-sm text-gray-700">Turned on {c.export.linked_at ? fmtDateTime(c.export.linked_at, tz) : ""}. Waiting for Google&apos;s first daily export (usually within 24 hours). Until then the table is loaded as before.</p>
+          )}
+          {c.export?.status === "active" && (
+            <p className="mt-3 text-sm text-gray-700" data-testid="full-data-range">Full data from <strong>{c.export.first}</strong> to <strong>{c.export.last}</strong>. Earlier days come from the standard GA4 connection.</p>
+          )}
+          {!c.export && (
+            <details className="mt-3 text-sm text-gray-700">
+              <summary className="cursor-pointer font-medium">What happens when I turn it on</summary>
+              <ol className="mt-2 list-decimal space-y-1 pl-5">
+                <li>Google asks you to allow the platform to manage this GA4 property. Your Google account needs the <strong>Administrator</strong> role on it.</li>
+                <li>The platform adds its own service account to the property for a few seconds, creates the BigQuery export link, and removes the service account again. Nothing else in GA4 is changed.</li>
+                <li>From tomorrow Google sends each day&apos;s events. Days before that stay as they are loaded now (GA4 does not export the past).</li>
+                <li>You can turn it off here at any time: the link is removed and the exported events are deleted.</li>
+              </ol>
+            </details>
+          )}
+        </section>
+      )}
+
       {isGa4Live && (
         <details id="ga4-reports" className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog" open={inSetup || Boolean(sp.groups_saved || sp.groups_unchanged || sp.error)}>
-          <summary className="cursor-pointer text-base font-semibold">Data in the table <span className="ml-2 text-sm font-normal text-gray-500">{fieldsNow.dimensions.length} of {GA4_MAX_DIMENSIONS} breakdowns · {fieldsNow.metrics.length} of {GA4_MAX_METRICS} numbers</span></summary>
+          <summary className="cursor-pointer text-base font-semibold">Data in the table <span className="ml-2 text-sm font-normal text-gray-500">{exportLiftsLimits(c) ? `${fieldsNow.dimensions.length} breakdowns · ${fieldsNow.metrics.length} numbers` : `${fieldsNow.dimensions.length} of ${GA4_MAX_DIMENSIONS} breakdowns · ${fieldsNow.metrics.length} of ${GA4_MAX_METRICS} numbers`}</span></summary>
           <p className="mt-2 text-xs text-gray-500">
             {inSetup
               ? "Tick every column you want in the table before the first load — a whole group with its switch, or single fields."
@@ -161,6 +217,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
             saved={enabledReports}
             canManage={canManage}
             reloadOnSave={!inSetup}
+            unlimited={exportLiftsLimits(c)}
           />
         </details>
       )}

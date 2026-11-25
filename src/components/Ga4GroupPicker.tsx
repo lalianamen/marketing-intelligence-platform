@@ -17,6 +17,7 @@ export function Ga4GroupPicker({
   saved,
   canManage,
   reloadOnSave,
+  unlimited = false,
 }: {
   action: (form: FormData) => Promise<void>;
   connectionId: string;
@@ -24,7 +25,10 @@ export function Ga4GroupPicker({
   saved: string[];
   canManage: boolean;
   reloadOnSave: boolean;
+  /** Full data (GA4 BigQuery export) is on: no GA4 Data API limit on columns. */
+  unlimited?: boolean;
 }) {
+  const problemOf = (sel: string[]) => (unlimited ? null : ga4SelectionProblem(sel));
   const [draft, setDraft] = useState<string[]>(saved);
   const dialog = useRef<HTMLDialogElement>(null);
   const added = draft.filter((g) => !saved.includes(g));
@@ -47,7 +51,7 @@ export function Ga4GroupPicker({
           const onCount = g.core ? names.length : names.filter((n) => draft.includes(n)).length;
           const allOn = onCount === names.length;
           const missing = names.filter((n) => !draft.includes(n));
-          const groupBlocked = !g.core && !allOn ? ga4SelectionProblem([...draft, ...missing]) : null;
+          const groupBlocked = !g.core && !allOn ? problemOf([...draft, ...missing]) : null;
           const pending = names.some((n) => added.includes(n) || removed.includes(n));
           return (
             <section key={g.id} className={`rounded-lg border p-3 ${onCount > 0 ? "border-green-200 bg-green-50/40" : "border-gray-100"} ${pending ? "ring-2 ring-amber-300" : ""}`} data-testid={`ga4-report-${g.id}`}>
@@ -82,7 +86,7 @@ export function Ga4GroupPicker({
               <ul className="mt-2 space-y-1 text-xs">
                 {[...g.dimensions, ...g.metrics].map((f) => {
                   const on = Boolean(g.core) || draft.includes(f.name);
-                  const blocked = !on ? ga4SelectionProblem([...draft, f.name]) : null;
+                  const blocked = !on ? problemOf([...draft, f.name]) : null;
                   const change = added.includes(f.name) ? "will be added" : removed.includes(f.name) ? "will be removed" : null;
                   return (
                     <li key={f.name}>
@@ -114,7 +118,9 @@ export function Ga4GroupPicker({
       {canManage && (
         <div className="sticky bottom-0 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white/95 p-3 text-sm shadow-sm" data-testid="ga4-picker-bar">
           <p className="text-gray-700">
-            {fields.dimensions.length} of {GA4_MAX_DIMENSIONS} breakdowns · {fields.metrics.length} of {GA4_MAX_METRICS} numbers
+            {unlimited
+              ? `${fields.dimensions.length} breakdowns · ${fields.metrics.length} numbers (no limit with full data)`
+              : `${fields.dimensions.length} of ${GA4_MAX_DIMENSIONS} breakdowns · ${fields.metrics.length} of ${GA4_MAX_METRICS} numbers`}
             {dirty ? (
               <span className="ml-2 font-medium text-amber-800">
                 Unsaved changes{added.length ? ` · add: ${added.join(", ")}` : ""}{removed.length ? ` · remove: ${removed.join(", ")}` : ""}

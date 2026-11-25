@@ -282,8 +282,16 @@ try {
     await page.locator("dialog[open]").getByRole("button", { name: "Cancel" }).click();
     const still = (await db.query(`select settings->'ga4_reports' as g from public.company_connections where id = $1`, [live])).rows[0].g;
     assert.deepEqual(still, ["sessionSource", "sessionMedium", "sessionDefaultChannelGroup"], "cancel keeps the saved set");
+    // Full data (GA4 BigQuery export): offered after the first load, with a plain explanation.
+    const full = page.getByTestId("full-data");
+    await full.getByText("What happens when I turn it on").click();
+    assert.ok(await full.getByText("removes the service account again").isVisible());
+    const href = await page.getByTestId("turn-on-full-data").getAttribute("href");
+    assert.match(href, /purpose=ga4_export/);
+    assert.match(href, new RegExp(`connection=${live}`));
     await db.end();
     step("data groups: pick several, then Save; after the first load Save warns before reloading");
+    step("full data: offered on a loaded GA4 connector with what will happen");
   }
 
   await page.goto(`${BASE}/app?days=90`);

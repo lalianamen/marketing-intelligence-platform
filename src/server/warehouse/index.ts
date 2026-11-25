@@ -73,3 +73,28 @@ export function clearWarehouseCache(): void {
 }
 
 export * from "./types";
+
+/**
+ * Short-lived access token of the platform's own service account for other Google
+ * APIs (e.g. the Analytics Admin API, to create a GA4 → BigQuery export link).
+ * Keyless: Workload Identity Federation on Vercel, Application Default Credentials locally.
+ */
+export async function platformAccessToken(scopes: string[]): Promise<string> {
+  const conf = workloadIdentityConfig();
+  let token: string | null | undefined;
+  if (conf) {
+    const [{ IdentityPoolClient }, { getVercelOidcToken }] = await Promise.all([import("google-auth-library"), import("@vercel/oidc")]);
+    const client = new IdentityPoolClient({ ...conf, scopes, subject_token_supplier: { getSubjectToken: () => getVercelOidcToken() } });
+    token = (await client.getAccessToken()).token;
+  } else {
+    const { GoogleAuth } = await import("google-auth-library");
+    token = await new GoogleAuth({ scopes }).getAccessToken();
+  }
+  if (!token) throw new Error("no access token for the platform service account");
+  return token;
+}
+
+/** Email of the platform's service account (added to a GA4 property only while the export link is created). */
+export function platformServiceAccountEmail(env: Record<string, string | undefined> = process.env): string | null {
+  return env.GCP_SERVICE_ACCOUNT_EMAIL || null;
+}

@@ -83,6 +83,16 @@ export interface Warehouse {
   rebuildMart(ref: DatasetRef, range: DateRange): Promise<{ stats: QueryStats }>;
   queryDaily(ref: DatasetRef, range: DateRange): Promise<{ rows: MartRow[]; stats: QueryStats }>;
   queryCampaigns(ref: DatasetRef, range: DateRange, limit: number): Promise<{ rows: CampaignRow[]; stats: QueryStats }>;
+  /**
+   * GA4's own BigQuery export (dataset analytics_<property>): first and last day exported,
+   * or null while the dataset or its first table does not exist yet.
+   */
+  ga4ExportRange(exportRef: DatasetRef): Promise<{ first: string; last: string } | null>;
+  /** Visits from the GA4 export added up by the chosen GA4 columns (values as strings, like the Data API). */
+  queryGa4Export(
+    exportRef: DatasetRef,
+    q: { range: DateRange; dimensions: string[]; metrics: string[]; keyEvents: string[] },
+  ): Promise<{ rows: Record<string, string>[]; stats: QueryStats }>;
   /** Dates (YYYY-MM-DD) that have at least one normalized row for an origin in the range. */
   coveredDates(ref: DatasetRef, origin: string, range: DateRange): Promise<string[]>;
 }

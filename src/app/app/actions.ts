@@ -16,7 +16,8 @@ import { getCompanyAccess } from "@/server/auth/authz";
 import { decryptSecret } from "@/server/crypto";
 import { withTransaction } from "@/server/db";
 import { createLiveConnection, type GoogleProvider } from "@/server/oauth/connect";
-import { clearConnectorForReload, deleteConnection, setGa4Groups, updateSchedule } from "@/server/connections/manage";
+import { clearConnectorForReload, deleteConnection, loadConnection, setGa4Groups, updateSchedule } from "@/server/connections/manage";
+import { removeGa4Export } from "@/server/ga4export/link";
 import { localDate, addDays } from "@/lib/dates";
 import { getWarehouse } from "@/server/warehouse";
 import type { DiscoveredAccount } from "@/server/connectors/google";
@@ -282,6 +283,9 @@ export async function deleteConnectionAction(form: FormData): Promise<void> {
   const cfg = loadConfig();
   let name = "";
   try {
+    // GA4 export: remove the link in GA4 and the exported events before the connector goes.
+    const access = await loadConnection(getPool(), user.id, id);
+    if (access?.access === "manage" && access.export) await removeGa4Export(getPool(), exportRemovalDeps(cfg), id);
     ({ name } = await deleteConnection(getPool(), (p) => getWarehouse(p, cfg), user.id, id));
   } catch (err) {
     const m = (err as Error).message;
@@ -371,4 +375,32 @@ export async function startLoadingAction(form: FormData): Promise<void> {
   );
   kickJobs();
   redirect(`/app/connections/${id}?started=${r.data}#history`);
+}
+
+function exportRemovalDeps(cfg: ReturnType<typeof loadConfig>) {
+  return {
+    google: { clientId: cfg.google.clientId ?? "", clientSecret: cfg.google.clientSecret ?? "" },
+    encryptionKey: cfg.tokenEncryptionKey ?? "",
+    deleteExportDataset: async (project: string, dataset: string, location: string) => {
+      const wh = await getWarehouse("bigquery", cfg);
+      await wh.deleteDataset({ provider: "bigquery", projectId: project, datasetId: dataset, location });
+    },
+  };
+}
+
+/** Turns GA4's BigQuery export off for a connector (the link in GA4 and the exported events are removed). */
+export async function turnOffGa4ExportAction(form: FormData): Promise<void> {
+  const { user } = await requireUser();
+  const id = String(form.get("connection_id") ?? "");
+  const cfg = loadConfig();
+  const c = await loadConnection(getPool(), user.id, id);
+  if (!c || c.access !== "manage") redirect(`/app/connections/${id}?error=` + encodeURIComponent("Not found, or you do not have access."));
+  const r = await removeGa4Export(getPool(), exportRemovalDeps(cfg), id);
+  await getPool().query(
+    `insert into public.audit_logs (workspace_id, company_id, actor_user_id, action, target_type, target_id)
+     values ($1, $2, $3, 'connection.ga4_export_removed', 'connection', $4)`,
+    [c!.workspace_id, c!.company_id, user.id, id],
+  );
+  revalidatePath("/app", "layout");
+  redirect(`/app/connections/${id}?export_off=1${r.warning ? "&export_error=" + encodeURIComponent(r.warning) : ""}#full-data`);
 }
