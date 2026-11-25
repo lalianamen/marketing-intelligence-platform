@@ -39,7 +39,7 @@ function ConnectorCard({ c, lastRun, tz, position }: { c: ConnectionRow; lastRun
         <div className="flex justify-between gap-2"><dt className="text-gray-500">Data up to</dt><dd className="text-right text-gray-900">{c.data_as_of ?? "—"}</dd></div>
         <div className="flex justify-between gap-2">
           <dt className="text-gray-500">Loading</dt>
-          <dd><LoadStatus run={lastRun} position={position} tz={tz} /></dd>
+          <dd>{c.mode !== "manual" && !c.activated_at ? <Badge tone="amber">Needs setup</Badge> : <LoadStatus run={lastRun} position={position} tz={tz} />}</dd>
         </div>
       </dl>
       {c.status !== "connected" && <p className="mt-2 text-xs text-red-700">{c.last_error ?? `Status: ${c.status}`}</p>}
@@ -106,6 +106,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         )}
       </section>
 
+      {conns.connections.some((c) => c.mode !== "manual" && !c.activated_at) && (
+        <Notice tone="amber">
+          Finish setting up {conns.connections.filter((c) => c.mode !== "manual" && !c.activated_at).map((c) => PROVIDER_LABEL[c.provider_id] ?? c.provider_id).join(", ")}: choose the data, period and schedule, then start loading.{" "}
+          <a className="underline" href={`/app/connections/${conns.connections.find((c) => c.mode !== "manual" && !c.activated_at)!.id}#setup`}>Open setup</a>
+        </Notice>
+      )}
       {space.status !== "ready" && <Notice tone="blue">The company&apos;s data space is being prepared. Charts appear once it is ready and data is imported.</Notice>}
 
       {space.status === "ready" && !hasData && (

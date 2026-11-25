@@ -15,7 +15,7 @@ import { fmtDateTime, fmtInt } from "@/lib/format";
 import { parseRawTableParams, rawTableQuery, valueAt } from "@/lib/rawTable";
 import { RawFilterRow } from "@/components/RawFilterRow";
 import { GA4_REPORTS, ga4ReportById, sanitizeGa4Reports } from "@/lib/ga4Catalog";
-import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, syncNowAction, toggleGa4ReportAction, updateScheduleAction } from "../../actions";
+import { deleteConnectionAction, disconnectConnectionAction, requestHistoryAction, startLoadingAction, syncNowAction, toggleGa4ReportAction, updateScheduleAction } from "../../actions";
 import { addDays, localDate } from "@/lib/dates";
 
 const RUN_TONE: Record<string, "green" | "blue" | "red" | "gray"> = { succeeded: "green", running: "blue", queued: "blue", failed: "red", dead: "red", cancelled: "gray" };
@@ -31,6 +31,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
   const tz = ctx.company.timezone;
   const cfg = loadConfig();
   const isGa4Live = c.provider_id === "ga4" && c.mode === "live";
+  const inSetup = c.mode !== "manual" && !c.activated_at;
   const enabledReports = isGa4Live ? sanitizeGa4Reports(c.settings?.ga4_reports) : [];
   const shownReport = isGa4Live && sp.report && enabledReports.includes(sp.report) ? sp.report : "core";
   const rawSource = isGa4Live ? (shownReport === "core" ? "ga4" : `ga4:${shownReport}`) : undefined;
@@ -71,12 +72,12 @@ export default async function ConnectionPage({ params, searchParams }: { params:
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <a href="/app/connections" className="text-sm text-brand-700 hover:underline">← Data Connections</a>
-          <h1 className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-semibold">{name} <Badge tone={b.tone}>{b.text}</Badge> <LoadStatus run={current} position={position} tz={tz} /></h1>
+          <h1 className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-semibold">{name} <Badge tone={b.tone}>{b.text}</Badge> {inSetup ? <Badge tone="amber">Needs setup</Badge> : <LoadStatus run={current} position={position} tz={tz} />}</h1>
           {c.external_account_name && <p className="text-sm text-gray-600">{c.external_account_name}</p>}
         </div>
         {canManage && (
           <div className="flex flex-wrap items-center gap-2" data-testid="connector-actions">
-            {c.mode === "manual" ? (
+            {inSetup ? null : c.mode === "manual" ? (
               <LinkButton href="/app/connections/csv">Upload new file</LinkButton>
             ) : (
               <form action={syncNowAction}>
@@ -116,7 +117,137 @@ export default async function ConnectionPage({ params, searchParams }: { params:
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.saved && <Notice tone="green">Saved.</Notice>}
       {sp.queued && <Notice tone="green">Update requested.</Notice>}
+      {sp.restarted && <Notice tone="green">The tables were deleted and loading started again with the new set of data: {sp.rfrom} → {sp.rto}, {sp.restarted} part{sp.restarted === "1" ? "" : "s"}.</Notice>}
+      {sp.started && <Notice tone="green">Loading started in {sp.started} part{sp.started === "1" ? "" : "s"} of up to one month. Automatic updates are on as chosen.</Notice>}
 
+      {inSetup && (
+        <section id="setup" className="space-y-4 rounded-xl border-2 border-brand-200 bg-white p-5" data-testid="connector-setup">
+          <div>
+            <h2 className="text-lg font-semibold">Set up before the first load</h2>
+            <p className="text-sm text-gray-600">Nothing has been loaded yet. Choose what to collect, for which period and how often, then press Start loading.</p>
+          </div>
+          <Notice tone="amber">
+            Switch on all the data you need <strong>now</strong>, before the first load. If you change the data later, the whole
+            current table of this connector is deleted and loaded again from scratch — and a new load takes time.
+          </Notice>
+          <ol className="space-y-1 text-sm text-gray-700">
+            <li><strong>1. What to collect</strong> — {isGa4Live ? "switch reports on in the list below (the dashboard report is always included)." : "this source has one standard report."}</li>
+            <li><strong>2. Period</strong> and <strong>3. Schedule</strong> — in the form below.</li>
+          </ol>
+        </section>
+      )}
+
+      {isGa4Live && (
+        <details id="ga4-reports" className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog" open={inSetup || Boolean(sp.enabled || sp.disabled || sp.report)}>
+          <summary className="cursor-pointer text-base font-semibold">What else GA4 can provide <span className="ml-2 text-sm font-normal text-gray-500">{enabledReports.length} extra report{enabledReports.length === 1 ? "" : "s"} on</span></summary>
+          <p className="mt-2 text-xs text-gray-500">
+            {inSetup
+              ? "Switch on everything you want to collect before the first load. Dashboard totals always come from the first report."
+              : "Changing this list deletes the connector's current tables and loads the same period again with the new set of data. Dashboard totals always come from the first report."}
+          </p>
+          {sp.enabled && <div className="mt-3"><Notice tone="green">Report switched on. The last 30 days are loading — they appear in Raw data in a minute.</Notice></div>}
+          {sp.disabled && <div className="mt-3"><Notice tone="blue">Report switched off and its data deleted.</Notice></div>}
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {GA4_REPORTS.map((g) => {
+              const on = g.core || enabledReports.includes(g.id);
+              return (
+                <section key={g.id} className={`rounded-lg border p-3 ${on && !g.unavailable ? "border-green-200 bg-green-50/40" : "border-gray-100"}`} data-testid={`ga4-report-${g.id}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">{g.title}</h3>
+                      <p className="text-xs text-gray-600">{g.summary}</p>
+                    </div>
+                    {g.core ? (
+                      <Badge tone="green">always on</Badge>
+                    ) : g.unavailable ? (
+                      <Badge tone="gray">not via API</Badge>
+                    ) : canManage && !inSetup ? (
+                      <ConfirmButton
+                        action={toggleGa4ReportAction}
+                        fields={{ connection_id: c.id, report: g.id, on: on ? "false" : "true" }}
+                        label={on ? "Turn off" : "Turn on"}
+                        triggerLabel={`${on ? "Turn off" : "Turn on"} ${g.title}`}
+                        triggerClassName={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-green-600" : "bg-gray-300"}`}
+                        trigger={<span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${on ? "translate-x-5" : "translate-x-0.5"}`} />}
+                        title={`${on ? "Turn off" : "Turn on"} “${g.title}” and reload?`}
+                        lines={[
+                          "The whole current table of this connector will be deleted — dashboard data and every report.",
+                          "A new load then starts from scratch with the new set of data, for the same period that is loaded now.",
+                          "Loading takes time: it runs in parts of up to one month, from a few minutes up to a few hours for a long period. Until it finishes, the dashboard shows only the days loaded so far.",
+                        ]}
+                        confirmLabel="Delete tables and reload"
+                        pendingLabel="Restarting…"
+                      />
+                    ) : canManage ? (
+                      <form action={toggleGa4ReportAction}>
+                        <input type="hidden" name="connection_id" value={c.id} />
+                        <input type="hidden" name="report" value={g.id} />
+                        <input type="hidden" name="on" value={on ? "false" : "true"} />
+                        <button
+                          aria-pressed={on}
+                          aria-label={`${on ? "Turn off" : "Turn on"} ${g.title}`}
+                          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-green-600" : "bg-gray-300"}`}
+                        >
+                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${on ? "translate-x-5" : "translate-x-0.5"}`} />
+                        </button>
+                        <span className="sr-only">{on ? "On" : "Off"}</span>
+                      </form>
+                    ) : (
+                      <Badge tone={on ? "green" : "gray"}>{on ? "on" : "off"}</Badge>
+                    )}
+                  </div>
+                  {g.note && <p className="mt-1 text-xs text-amber-800">{g.note}</p>}
+                  {g.dimensions.length + g.metrics.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-xs">
+                      {[...g.dimensions, ...g.metrics].map((f) => (
+                        <li key={f.name} className="flex gap-2">
+                          <code className="shrink-0 font-mono text-gray-800">{f.name}</code>
+                          <span className="text-gray-600">{f.description}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        </details>
+      )}
+
+      {inSetup && canManage && (
+        <Card title="Period and schedule">
+          <form action={startLoadingAction} className="space-y-4 text-sm" data-testid="start-loading-form">
+            <input type="hidden" name="connection_id" value={c.id} />
+            <fieldset className="space-y-2">
+              <legend className="font-medium text-gray-800">2. Period to load</legend>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="block">
+                  <span className="text-gray-700">From</span>
+                  <input type="date" name="from" required min={addDays(yesterday, -399)} max={yesterday} defaultValue={addDays(yesterday, -29)} className="mt-1 block rounded-lg border border-gray-300 px-2 py-1" />
+                </label>
+                <label className="block">
+                  <span className="text-gray-700">To</span>
+                  <input type="date" name="to" required min={addDays(yesterday, -399)} max={yesterday} defaultValue={yesterday} className="mt-1 block rounded-lg border border-gray-300 px-2 py-1" />
+                </label>
+                <span className="text-xs text-gray-500">Default: the last 30 complete days. Up to 400 days back, loaded in parts of up to one month.</span>
+              </div>
+            </fieldset>
+            <fieldset className="space-y-2">
+              <legend className="font-medium text-gray-800">3. Automatic updates</legend>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2"><input type="radio" name="frequency" value="daily" defaultChecked /> Every day at</label>
+                <input type="time" name="local_time" defaultValue={c.schedule?.local_time ?? "06:00"} required className="rounded-lg border border-gray-300 px-2 py-1" />
+                <span className="text-gray-500">{tz}</span>
+              </div>
+              <label className="flex items-center gap-2"><input type="radio" name="frequency" value="manual" /> Only when I press “Update now”</label>
+            </fieldset>
+            <SubmitButton pendingText="Starting…">Start loading</SubmitButton>
+          </form>
+        </Card>
+      )}
+
+      {!inSetup && (
+        <>
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="Status">
           <dl className="space-y-1.5 text-sm">
@@ -201,65 +332,10 @@ export default async function ConnectionPage({ params, searchParams }: { params:
           </div>
         )}
       </Card>
-
-      {isGa4Live && (
-        <details id="ga4-reports" className="rounded-xl border border-gray-200 bg-white p-5" data-testid="ga4-catalog" open={Boolean(sp.enabled || sp.disabled || sp.report)}>
-          <summary className="cursor-pointer text-base font-semibold">What else GA4 can provide <span className="ml-2 text-sm font-normal text-gray-500">{enabledReports.length} extra report{enabledReports.length === 1 ? "" : "s"} on</span></summary>
-          <p className="mt-2 text-xs text-gray-500">
-            Switch on what you want to collect. Each report is loaded with every update and kept in BigQuery as raw data; switching one on loads the last 30 days right away, switching it off stops it and deletes its data. Dashboard totals always come from the first report only.
-          </p>
-          {sp.enabled && <div className="mt-3"><Notice tone="green">Report switched on. The last 30 days are loading — they appear in Raw data in a minute.</Notice></div>}
-          {sp.disabled && <div className="mt-3"><Notice tone="blue">Report switched off and its data deleted.</Notice></div>}
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {GA4_REPORTS.map((g) => {
-              const on = g.core || enabledReports.includes(g.id);
-              return (
-                <section key={g.id} className={`rounded-lg border p-3 ${on && !g.unavailable ? "border-green-200 bg-green-50/40" : "border-gray-100"}`} data-testid={`ga4-report-${g.id}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900">{g.title}</h3>
-                      <p className="text-xs text-gray-600">{g.summary}</p>
-                    </div>
-                    {g.core ? (
-                      <Badge tone="green">always on</Badge>
-                    ) : g.unavailable ? (
-                      <Badge tone="gray">not via API</Badge>
-                    ) : canManage ? (
-                      <form action={toggleGa4ReportAction}>
-                        <input type="hidden" name="connection_id" value={c.id} />
-                        <input type="hidden" name="report" value={g.id} />
-                        <input type="hidden" name="on" value={on ? "false" : "true"} />
-                        <button
-                          aria-pressed={on}
-                          aria-label={`${on ? "Turn off" : "Turn on"} ${g.title}`}
-                          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-green-600" : "bg-gray-300"}`}
-                        >
-                          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${on ? "translate-x-5" : "translate-x-0.5"}`} />
-                        </button>
-                        <span className="sr-only">{on ? "On" : "Off"}</span>
-                      </form>
-                    ) : (
-                      <Badge tone={on ? "green" : "gray"}>{on ? "on" : "off"}</Badge>
-                    )}
-                  </div>
-                  {g.note && <p className="mt-1 text-xs text-amber-800">{g.note}</p>}
-                  {g.dimensions.length + g.metrics.length > 0 && (
-                    <ul className="mt-2 space-y-1 text-xs">
-                      {[...g.dimensions, ...g.metrics].map((f) => (
-                        <li key={f.name} className="flex gap-2">
-                          <code className="shrink-0 font-mono text-gray-800">{f.name}</code>
-                          <span className="text-gray-600">{f.description}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              );
-            })}
-          </div>
-        </details>
+        </>
       )}
 
+      {!inSetup && (
       <Card title="Raw data">
         {isGa4Live && enabledReports.length > 0 && (
           <nav aria-label="Report" className="mb-3 flex flex-wrap gap-1" data-testid="raw-report-tabs">
@@ -344,6 +420,7 @@ export default async function ConnectionPage({ params, searchParams }: { params:
           </>
         )}
       </Card>
+      )}
     </div>
   );
 }

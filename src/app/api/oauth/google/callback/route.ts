@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/server/supabase/server";
 import { getPool, withTransaction } from "@/server/db";
-import { kickJobs } from "@/server/jobs/kick";
 import { createLiveConnection, defaultAccountName } from "@/server/oauth/connect";
 import type { ConnectorError } from "@/server/connectors/types";
 import { googleOAuthConfigured, loadConfig } from "@/server/config";
@@ -97,8 +96,8 @@ export async function GET(request: NextRequest) {
         encryptionKey: cfg.tokenEncryptionKey!,
       }),
     );
-    await startFirstSync(connectionId);
-    return NextResponse.redirect(new URL(`/app/connections?connected=${encodeURIComponent(accounts[0]!.name)}`, cfg.appUrl));
+    // Nothing loads yet: the user first chooses data, period and schedule on the setup page.
+    return NextResponse.redirect(new URL(`/app/connections/${connectionId}?setup=1`, cfg.appUrl));
   }
 
   // Several accounts: keep the encrypted grant for 30 minutes and let the user choose.
@@ -113,11 +112,4 @@ export async function GET(request: NextRequest) {
     encryptSecret(refreshToken, cfg.tokenEncryptionKey!, `pending:${grantId}`),
   ]);
   return NextResponse.redirect(new URL(`/app/connections/choose?grant=${grantId}`, cfg.appUrl));
-}
-
-/** Queue the first import right away and process it after the response. */
-async function startFirstSync(connectionId: string): Promise<void> {
-  const { supabase } = await getUser();
-  const r = await supabase.rpc("request_sync", { p_connection_id: connectionId });
-  if (!r.error) kickJobs();
 }

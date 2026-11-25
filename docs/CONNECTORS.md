@@ -114,6 +114,18 @@ Google user can read and connects it:
   for live connectors, account; its raw rows by sync run), rebuilds the mart for the affected days, then deletes runs,
   schedule and token. Refused while an update is running.
 
+## Setup before the first load
+
+- A newly connected live source loads nothing (`company_connections.activated_at` is null, schedule off). The connector
+  page shows setup: 1) which reports to collect, 2) the period (default last 30 complete days, up to 400), 3) daily
+  time or manual only, with a note to switch everything on before the first load. "Start loading" saves the schedule,
+  queues the period in parts of up to one month (`request_history`) and sets `activated_at`.
+- Reconnecting after an expired sign-in keeps the schedule; reconnecting a disconnected connector goes through setup again.
+- After the first load, switching a report on or off asks for confirmation: the connector's whole current table
+  (dashboard rows and every report's raw rows) is deleted, the dashboard days are rebuilt, queued parts are cancelled and
+  the same period (from its first loaded day, at most 400 days) is loaded again with the new set of data. This keeps
+  every table uniform; loading again takes time.
+
 ## Raw data table and export
 
 - Connector page → Raw data: period (7/30/90 days, all, or from–to; default last 30 complete days), up to three

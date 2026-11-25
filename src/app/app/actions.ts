@@ -16,7 +16,7 @@ import { getCompanyAccess } from "@/server/auth/authz";
 import { decryptSecret } from "@/server/crypto";
 import { withTransaction } from "@/server/db";
 import { createLiveConnection, type GoogleProvider } from "@/server/oauth/connect";
-import { deleteConnection, setGa4Report, updateSchedule } from "@/server/connections/manage";
+import { clearConnectorForReload, deleteConnection, setGa4Report, updateSchedule } from "@/server/connections/manage";
 import { localDate, addDays } from "@/lib/dates";
 import { getWarehouse } from "@/server/warehouse";
 import type { DiscoveredAccount } from "@/server/connectors/google";
@@ -236,9 +236,8 @@ export async function chooseGoogleAccountsAction(form: FormData): Promise<void> 
     }
     return out;
   }, db);
-  const { supabase } = await getUser();
-  for (const id of ids) await supabase.rpc("request_sync", { p_connection_id: id });
-  kickJobs();
+  // Nothing loads yet: each new connector is set up first (data, period, schedule).
+  if (ids.length === 1) redirect(`/app/connections/${ids[0]}?setup=1`);
   redirect(`/app/connections?connected=${encodeURIComponent(chosen.map((a) => a.name).join(", "))}`);
 }
 
@@ -298,21 +297,35 @@ export async function toggleGa4ReportAction(form: FormData): Promise<void> {
   const report = String(form.get("report") ?? "");
   const on = String(form.get("on") ?? "") === "true";
   const cfg = loadConfig();
-  let backfill = false;
+  const db = getPool();
+  const conn = (await db.query<{ activated_at: Date | null; timezone: string }>(
+    `select c.activated_at, co.timezone from public.company_connections c join public.companies co on co.id = c.company_id where c.id = $1`,
+    [id],
+  )).rows[0];
+  const back = (msg: string) => redirect(`/app/connections/${id}?error=` + encodeURIComponent(msg) + "#ga4-reports");
   try {
-    ({ backfill } = await setGa4Report(getPool(), (p) => getWarehouse(p, cfg), user.id, id, report, on));
+    await setGa4Report(db, (p) => getWarehouse(p, cfg), user.id, id, report, on);
   } catch (err) {
-    redirect(`/app/connections/${id}?error=` + encodeURIComponent(friendly((err as Error).message)) + "#ga4-reports");
+    back(friendly((err as Error).message));
   }
-  if (backfill) {
-    // Load the last 30 complete days of the newly enabled report right away.
-    const { data: comp } = await supabase.from("company_connections").select("companies(timezone)").eq("id", id).maybeSingle();
-    const tz = (comp?.companies as unknown as { timezone?: string } | null)?.timezone ?? "UTC";
-    const to = addDays(localDate(new Date(), tz), -1);
-    await supabase.rpc("request_sync", { p_connection_id: id, p_window_start: addDays(to, -(cfg.initialBackfillDays - 1)), p_window_end: to });
-    kickJobs();
+  if (!conn?.activated_at) {
+    // Still in setup: just remember the choice; nothing is loaded yet.
+    redirect(`/app/connections/${id}?setup=1#ga4-reports`);
   }
-  redirect(`/app/connections/${id}?report=${on ? report : "core"}` + (on ? "&enabled=1" : "&disabled=1") + "#ga4-reports");
+  // After the first load, a change of the collected data restarts the connector:
+  // its tables are deleted and the same period is loaded again with the new set.
+  const yesterday = addDays(localDate(new Date(), conn!.timezone), -1);
+  let period: { from: string; to: string };
+  try {
+    period = await clearConnectorForReload(db, (p) => getWarehouse(p, cfg), user.id, id, yesterday);
+  } catch (err) {
+    back(/busy/.test((err as Error).message) ? "A load is running right now. Try again in a minute." : friendly((err as Error).message));
+  }
+  const r = await supabase.rpc("request_history", { p_connection_id: id, p_from: period!.from, p_to: period!.to });
+  if (r.error) back(friendly(r.error.message));
+  revalidatePath("/app", "layout");
+  kickJobs();
+  redirect(`/app/connections/${id}?restarted=${r.data}&rfrom=${period!.from}&rto=${period!.to}#history`);
 }
 
 export async function requestHistoryAction(form: FormData): Promise<void> {
@@ -332,4 +345,28 @@ export async function requestHistoryAction(form: FormData): Promise<void> {
   }
   kickJobs();
   redirect(`/app/connections/${id}?history=${r.data}#history`);
+}
+
+export async function startLoadingAction(form: FormData): Promise<void> {
+  const { supabase, user } = await requireUser();
+  const id = String(form.get("connection_id") ?? "");
+  const from = String(form.get("from") ?? "");
+  const to = String(form.get("to") ?? "");
+  const back = (msg: string) => redirect(`/app/connections/${id}?setup=1&error=` + encodeURIComponent(msg) + "#setup");
+  try {
+    await updateSchedule(getPool(), user.id, id, {
+      frequency: String(form.get("frequency") ?? "daily"),
+      localTime: String(form.get("local_time") ?? "06:00").slice(0, 5),
+    });
+  } catch (err) {
+    back(/invalid time/.test((err as Error).message) ? "Please choose a valid time." : friendly((err as Error).message));
+  }
+  const r = await supabase.rpc("request_history", { p_connection_id: id, p_from: from, p_to: to });
+  if (r.error) back(/invalid window/.test(r.error.message) ? "Choose complete past days (up to yesterday), at most 400 days back." : friendly(r.error.message));
+  await getPool().query(
+    `update public.company_connections set activated_at = coalesce(activated_at, now()), updated_at = now() where id = $1`,
+    [id],
+  );
+  kickJobs();
+  redirect(`/app/connections/${id}?started=${r.data}#history`);
 }

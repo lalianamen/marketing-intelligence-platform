@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { type ReactNode, useRef } from "react";
 import { SubmitButton } from "./SubmitButton";
 
 /** A button that asks for confirmation in a dialog before running a server action. */
@@ -13,6 +13,9 @@ export function ConfirmButton({
   confirmLabel,
   pendingLabel,
   danger = true,
+  trigger,
+  triggerClassName,
+  triggerLabel,
 }: {
   action: (form: FormData) => Promise<void>;
   fields: Record<string, string>;
@@ -22,6 +25,10 @@ export function ConfirmButton({
   confirmLabel: string;
   pendingLabel: string;
   danger?: boolean;
+  /** Custom look for the opening button (e.g. a switch). */
+  trigger?: ReactNode;
+  triggerClassName?: string;
+  triggerLabel?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   return (
@@ -29,9 +36,10 @@ export function ConfirmButton({
       <button
         type="button"
         onClick={() => dialog.current?.showModal()}
-        className={`rounded-lg px-3.5 py-2 text-sm font-medium ring-1 ${danger ? "text-red-700 ring-red-200 hover:bg-red-50" : "text-gray-800 ring-gray-300 hover:bg-gray-50"}`}
+        aria-label={triggerLabel}
+        className={triggerClassName ?? `rounded-lg px-3.5 py-2 text-sm font-medium ring-1 ${danger ? "text-red-700 ring-red-200 hover:bg-red-50" : "text-gray-800 ring-gray-300 hover:bg-gray-50"}`}
       >
-        {label}
+        {trigger ?? label}
       </button>
       <dialog ref={dialog} className="m-auto w-[min(30rem,calc(100vw-2rem))] rounded-xl p-0 shadow-xl backdrop:bg-black/40">
         <form action={action} className="space-y-4 p-6">

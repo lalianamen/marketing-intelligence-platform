@@ -12,6 +12,8 @@ export interface ConnectionRow {
   last_synced_at: string | null;
   data_as_of: string | null;
   last_error: string | null;
+  /** null while the connector is still being set up (nothing loads yet). */
+  activated_at: string | null;
 }
 
 export interface SyncRunRow {
@@ -57,7 +59,7 @@ export async function loadConnections(supabase: SupabaseClient, companyId: strin
   const [{ data: connections }, { data: runs }, { data: issues }] = await Promise.all([
     supabase
       .from("company_connections")
-      .select("id,provider_id,mode,status,external_account_name,last_synced_at,data_as_of,last_error")
+      .select("id,provider_id,mode,status,external_account_name,last_synced_at,data_as_of,last_error,activated_at")
       .eq("company_id", companyId)
       .neq("status", "disconnected")
       .order("created_at"),

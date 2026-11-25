@@ -25,6 +25,8 @@ export interface ConnectionDetail {
   last_error: string | null;
   created_at: string;
   settings: { ga4_reports?: string[] };
+  /** null while the connector is in setup (nothing loads yet). */
+  activated_at: string | null;
   schedule: { frequency: "daily" | "manual"; local_time: string; timezone: string; enabled: boolean; next_run_at: string | null } | null;
   access: "manage" | "read";
 }
@@ -33,7 +35,7 @@ export async function loadConnection(db: Queryable, userId: string, connectionId
   if (!/^[0-9a-f-]{36}$/i.test(connectionId)) return null;
   const r = await db.query(
     `select c.id, c.company_id, c.workspace_id, c.provider_id, c.mode, c.status, c.external_account_id, c.external_account_name,
-            c.last_synced_at, c.data_as_of::text as data_as_of, c.last_error, c.created_at, c.settings,
+            c.last_synced_at, c.data_as_of::text as data_as_of, c.last_error, c.created_at, c.settings, c.activated_at,
             s.frequency, to_char(s.local_time, 'HH24:MI') as local_time, s.timezone, s.enabled, s.next_run_at
        from public.company_connections c
        left join public.sync_schedules s on s.connection_id = c.id
@@ -48,6 +50,7 @@ export async function loadConnection(db: Queryable, userId: string, connectionId
     ...row,
     last_synced_at: row.last_synced_at ? new Date(row.last_synced_at).toISOString() : null,
     created_at: new Date(row.created_at).toISOString(),
+    activated_at: row.activated_at ? new Date(row.activated_at).toISOString() : null,
     schedule: row.frequency
       ? { frequency: row.frequency, local_time: row.local_time, timezone: row.timezone, enabled: row.enabled, next_run_at: row.next_run_at ? new Date(row.next_run_at).toISOString() : null }
       : null,
@@ -254,4 +257,55 @@ export async function loadRawPage(
     }
   }
   return { columns, rows: page.rows, total: page.total, available: true, origin: c.provider_id, suggestions };
+}
+
+/**
+ * Changing what a connector collects after its first load restarts it: all its
+ * stored rows (dashboard and raw, every report) are deleted, the dashboard days
+ * are rebuilt, queued history parts are cancelled, and the period that was
+ * loaded (from its first day to yesterday, at most 400 days) is returned so the
+ * caller can queue a fresh load with the new set of data.
+ */
+export async function clearConnectorForReload(
+  db: Queryable,
+  getWarehouse: (p: WarehouseProvider) => Promise<Warehouse>,
+  userId: string,
+  connectionId: string,
+  yesterday: string,
+): Promise<{ from: string; to: string }> {
+  const c = await requireManage(db, userId, connectionId);
+  const running = await db.query(`select 1 from public.sync_runs where connection_id = $1 and status = 'running' limit 1`, [c.id]);
+  if (running.rowCount) throw new Error("connection busy");
+  await db.query(`update public.sync_runs set status = 'cancelled', finished_at = now() where connection_id = $1 and status = 'queued'`, [c.id]);
+  let from: string | null = null;
+  const resource = await getResourceForCompany(db, c.company_id);
+  if (resource?.status === "ready") {
+    const ref = toDatasetRef(resource);
+    const wh = await getWarehouse(resource.provider);
+    const { range } = await wh.deleteConnectionData(ref, {
+      origin: c.provider_id,
+      isSimulated: c.mode === "simulated",
+      accountId: c.mode === "live" ? c.external_account_id : null,
+      syncRunIds: await runIds(db, c.id),
+    });
+    if (range) {
+      await wh.rebuildMart(ref, range);
+      from = range.from;
+    }
+  }
+  await db.query(`delete from public.sync_checkpoints where connection_id = $1`, [c.id]);
+  await db.query(
+    `insert into public.audit_logs (workspace_id, company_id, actor_user_id, action, target_type, target_id)
+     values ($1, $2, $3, 'connection.data_restarted', 'connection', $4)`,
+    [c.workspace_id, c.company_id, userId, c.id],
+  );
+  const earliest = addDaysIso(yesterday, -399);
+  const start = from && from >= earliest ? from : from ? earliest : addDaysIso(yesterday, -29);
+  return { from: start > yesterday ? yesterday : start, to: yesterday };
+}
+
+function addDaysIso(d: string, n: number): string {
+  const t = new Date(d + "T00:00:00Z");
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
 }

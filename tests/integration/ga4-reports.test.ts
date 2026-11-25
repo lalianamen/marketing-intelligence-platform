@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { loadConnection, loadRawRows, setGa4Report } from "@/server/connections/manage";
+import { clearConnectorForReload, loadConnection, loadRawRows, setGa4Report } from "@/server/connections/manage";
 import type { Connector, FetchContext } from "@/server/connectors/types";
 import { drain, runSyncOnce } from "@/worker/worker";
 import { createCompany, createVerifiedUser, localWarehouse, onlyCompanies, pool, type TestUser, workerDeps } from "./helpers";
@@ -91,5 +91,26 @@ describe("switchable GA4 reports", () => {
     expect((await loadRawRows(pool, deps.getWarehouse, U.id, conn, 500, "ga4")).rows).toHaveLength(3);
     expect((await wh.queryDaily(ref, { from: "2026-11-01", to: "2026-11-03" })).rows).toEqual(before);
     await expect(setGa4Report(pool, deps.getWarehouse, U.id, conn, "raw_events", true)).rejects.toThrow(/unknown report/);
+  });
+
+  it("changing the data after the first load deletes the connector's tables and returns the period to reload", async () => {
+    const deps = await workerDeps({ syncOverrides: { connectorOverride: () => fakeGa4 } });
+    await setGa4Report(pool, deps.getWarehouse, U.id, conn, "traffic_sources", true);
+    expect(await sync(deps)).toBe("succeeded");
+    const r = (await pool.query(`select * from public.analytics_resources where company_id = $1`, [company])).rows[0];
+    const ref = { provider: "local" as const, projectId: r.project_id, datasetId: r.dataset_id, location: r.location };
+    const wh = await localWarehouse();
+    expect((await wh.queryDaily(ref, { from: "2026-11-01", to: "2026-11-03" })).rows.length).toBeGreaterThan(0);
+    await pool.query(
+      `insert into public.sync_runs (workspace_id, company_id, connection_id, provider_id, trigger, idempotency_key) values ($1, $2, $3, 'ga4', 'backfill', 'history:x:' || gen_random_uuid())`,
+      [U.workspaceId, company, conn],
+    );
+
+    const period = await clearConnectorForReload(pool, deps.getWarehouse, U.id, conn, "2026-11-24");
+    expect(period).toEqual({ from: "2026-11-01", to: "2026-11-24" });
+    expect((await loadRawRows(pool, deps.getWarehouse, U.id, conn, 500, "ga4")).rows).toEqual([]);
+    expect((await loadRawRows(pool, deps.getWarehouse, U.id, conn, 500, "ga4:traffic_sources")).rows).toEqual([]);
+    expect((await wh.queryDaily(ref, { from: "2026-11-01", to: "2026-11-03" })).rows).toEqual([]);
+    expect((await pool.query(`select count(*)::int n from public.sync_runs where connection_id = $1 and status = 'queued'`, [conn])).rows[0].n).toBe(0);
   });
 });

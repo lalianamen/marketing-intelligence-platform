@@ -64,13 +64,13 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
                   <div className="flex justify-between gap-2"><dt className="text-gray-500">Status</dt><dd><Badge tone={c.status === "connected" ? "green" : c.status === "expired" || c.status === "error" ? "red" : "gray"}>{c.status === "expired" ? "Needs reconnecting" : c.status}</Badge></dd></div>
                   <div className="flex justify-between gap-2"><dt className="text-gray-500">Last update</dt><dd className="text-gray-900">{fmtDateTime(c.last_synced_at, company.timezone)}</dd></div>
                   <div className="flex justify-between gap-2"><dt className="text-gray-500">Data up to</dt><dd className="text-gray-900">{c.data_as_of ?? "—"}</dd></div>
-                  <div className="flex justify-between gap-2"><dt className="text-gray-500">Loading</dt><dd><LoadStatus run={r} position={r ? positions.get(r.id) : undefined} tz={company.timezone} /></dd></div>
+                  <div className="flex justify-between gap-2"><dt className="text-gray-500">Loading</dt><dd>{c.mode !== "manual" && !c.activated_at ? <a href={`/app/connections/${c.id}#setup`}><Badge tone="amber">Needs setup</Badge></a> : <LoadStatus run={r} position={r ? positions.get(r.id) : undefined} tz={company.timezone} />}</dd></div>
                 </dl>
                 {c.last_error && <p className="mt-2 text-xs text-red-700">{c.last_error}</p>}
                 <div className="mt-auto flex flex-wrap gap-2 pt-4">
-                  <LinkButton href={`/app/connections/${c.id}`} variant="secondary">Open</LinkButton>
+                  {c.mode !== "manual" && !c.activated_at ? <LinkButton href={`/app/connections/${c.id}#setup`}>Finish setup</LinkButton> : <LinkButton href={`/app/connections/${c.id}`} variant="secondary">Open</LinkButton>}
                   {c.mode === "manual" && <LinkButton href="/app/connections/csv" variant="secondary">Upload new file</LinkButton>}
-                  {c.mode !== "manual" && (
+                  {c.mode !== "manual" && c.activated_at && (
                     <form action={syncNowAction}>
                       <input type="hidden" name="connection_id" value={c.id} />
                       <Button variant="secondary">Update now</Button>

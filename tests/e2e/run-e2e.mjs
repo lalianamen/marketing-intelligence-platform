@@ -209,6 +209,29 @@ try {
   await page.screenshot({ path: `${OUT}/10-connector.png`, fullPage: true });
   step("connector page: schedule saved, raw data table shown");
 
+  {
+    // A newly connected live GA4 connector waits for setup: nothing loads until Start loading.
+    const pg = createRequire(import.meta.url)("pg");
+    const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await db.connect();
+    const co = (await db.query(`select c.id, c.workspace_id from public.companies c join public.workspace_members m on m.workspace_id = c.workspace_id
+                                 join auth.users u on u.id = m.user_id where u.email = $1 limit 1`, [email])).rows[0];
+    const live = (await db.query(
+      `insert into public.company_connections (workspace_id, company_id, provider_id, mode, status, external_account_id, external_account_name, activated_at)
+       values ($1, $2, 'ga4', 'live', 'connected', '999', 'Demo property', null) returning id`, [co.workspace_id, co.id])).rows[0].id;
+    await db.query(`insert into public.sync_schedules (workspace_id, company_id, connection_id, frequency, local_time, timezone, enabled) values ($1, $2, $3, 'daily', '06:00', 'America/Los_Angeles', false)`, [co.workspace_id, co.id, live]);
+    await db.end();
+    await page.goto(`${BASE}/app/connections`);
+    await page.locator('[data-testid="connection-row"]:has-text("Demo property") a:has-text("Finish setup")').click();
+    await page.getByTestId("connector-setup").waitFor();
+    assert.ok(await page.getByText("Switch on all the data you need").isVisible());
+    assert.equal(await page.locator('button:has-text("Update now")').count(), 0, "no loading before setup");
+    assert.ok(await page.getByTestId("start-loading-form").isVisible());
+    assert.ok(await page.getByTestId("ga4-catalog").evaluate((d) => d.open), "report list is open during setup");
+    await page.screenshot({ path: `${OUT}/11-setup.png`, fullPage: true });
+    step("new live connector opens in setup: choose data, period and schedule before any load");
+  }
+
   await page.goto(`${BASE}/app?days=90`);
   await page.locator('[data-testid="connector-card"]').first().waitFor();
   assert.ok((await page.locator('[data-testid="connector-card"]').count()) >= 2, "dashboard lists connectors");
