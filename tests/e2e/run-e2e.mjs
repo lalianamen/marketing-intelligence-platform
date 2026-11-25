@@ -115,11 +115,10 @@ try {
   await page.click('a:has-text("Connect with an API token")');
   await page.waitForURL(/\/app\/connections\/clarity$/);
   assert.equal(await page.locator('[data-testid="clarity-form"] input[name="token"]').getAttribute("type"), "password", "token is not shown on screen");
-  await page.fill('input[name="project_id"]', "bad id!");
   await page.fill('input[name="token"]', "x");
   assert.equal(await page.locator('[data-testid="clarity-form"]').evaluate((f) => f.checkValidity()), false, "invalid input is stopped in the browser");
   await page.goto(`${BASE}/app/connections/new`);
-  step("Microsoft Clarity: connect page asks for project ID and a hidden API token");
+  step("Microsoft Clarity: connect page asks only for the key, hidden on screen, with step-by-step help");
 
   await page.goto(`${BASE}/app/connections/csv`);
   await page.setInputFiles('input[name="file"]', "public/sample-marketing-data.csv");

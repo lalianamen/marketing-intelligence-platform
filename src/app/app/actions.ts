@@ -420,10 +420,9 @@ export async function setThemeAction(form: FormData): Promise<void> {
 export async function connectClarityAction(form: FormData): Promise<void> {
   const { user } = await requireUser();
   const companyId = String(form.get("company_id") ?? "");
-  const projectId = String(form.get("project_id") ?? "").trim();
+
   const token = String(form.get("token") ?? "").trim();
   const back = (msg: string) => redirect("/app/connections/clarity?error=" + encodeURIComponent(msg));
-  if (!/^[A-Za-z0-9]{6,20}$/.test(projectId)) back("Please enter the Clarity project ID (letters and digits).");
   if (token.length < 20 || token.length > 4000 || /\s/.test(token)) back("This does not look like a Clarity API token. Copy it again from Clarity → Settings → Data Export.");
   const db = getPool();
   const cfg = loadConfig();
@@ -444,13 +443,17 @@ export async function connectClarityAction(form: FormData): Promise<void> {
     );
   }
   const ws = (await db.query<{ workspace_id: string }>(`select workspace_id from public.companies where id = $1`, [companyId])).rows[0]!.workspace_id;
+  // Clarity's key belongs to one project; the project is identified by a fingerprint of the key
+  // (no project ID to type). A new key for the same project is connected with "Reconnect".
+  const { sha256Hex } = await import("@/server/crypto");
+  const projectId = "key-" + sha256Hex(token).slice(0, 12);
   const id = await withTransaction((c) =>
     createLiveConnection(c, {
       workspaceId: ws,
       companyId,
       userId: user.id,
       provider: "microsoft_clarity",
-      account: { id: projectId, name: `Clarity project ${projectId}`, group: null },
+      account: { id: projectId, name: "Microsoft Clarity", group: null },
       refreshToken: token,
       scopes: [],
       encryptionKey: cfg.tokenEncryptionKey!,

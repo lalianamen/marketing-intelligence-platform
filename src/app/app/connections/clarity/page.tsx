@@ -15,16 +15,11 @@ export default async function ClarityConnectPage({ searchParams }: { searchParam
         <a href="/app/connections/new" className="text-sm text-brand-700 hover:underline">← Add a connector</a>
         <h1 className="text-2xl font-semibold">Connect Microsoft Clarity</h1>
         {sp.error && <Notice tone="red">{sp.error}</Notice>}
-        <Card title="Your Clarity project">
+        <Card title="Paste your Clarity key">
           <form action={connectClarityAction} className="space-y-4 text-sm" data-testid="clarity-form" autoComplete="off">
             <input type="hidden" name="company_id" value={ctx.company.id} />
             <label className="block">
-              <span className="font-medium text-gray-800">Project ID</span>
-              <input name="project_id" required pattern="[A-Za-z0-9]{6,20}" placeholder="e.g. ab12cd34ef" className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2" />
-              <span className="mt-1 block text-xs text-gray-500">In Clarity: Settings → Overview → Project ID (also in the address bar after /projects/view/).</span>
-            </label>
-            <label className="block">
-              <span className="font-medium text-gray-800">API token</span>
+              <span className="font-medium text-gray-800">Clarity key (API token)</span>
               <input name="token" type="password" required minLength={20} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 font-mono" />
               <span className="mt-1 block text-xs text-gray-500">Stored encrypted and never shown again. You can delete it in Clarity at any time to cut access.</span>
             </label>
@@ -33,14 +28,16 @@ export default async function ClarityConnectPage({ searchParams }: { searchParam
           </form>
         </Card>
       </div>
-      <Card title="How to get the token">
+      <Card title="How to get the key (1 minute)">
         <ol className="list-decimal space-y-2 pl-5 text-sm text-gray-700">
-          <li>Open <strong>clarity.microsoft.com</strong> and your site&apos;s project.</li>
-          <li><strong>Settings → Data Export → Generate new API token</strong> (only project admins can).</li>
-          <li>Name it e.g. <code>marketing-platform</code>, copy the token and paste it here.</li>
+          <li>Open <a className="font-medium text-brand-700 underline" href="https://clarity.microsoft.com/projects" target="_blank" rel="noopener noreferrer">your Clarity projects</a> and click your site.</li>
+          <li>Click <strong>Settings</strong> (gear icon) → <strong>Data Export</strong>.</li>
+          <li>Click <strong>Generate new API token</strong>, type any name (e.g. <code>platform</code>) and click <strong>Generate</strong>.</li>
+          <li>Click <strong>Copy</strong> and paste it into the field on this page.</li>
         </ol>
         <div className="mt-4 space-y-1 text-xs text-gray-500">
-          <p>What Clarity allows: the last 24 hours only, up to 3 breakdowns and 10 requests a day. The platform loads once a day right after midnight, so history builds up from today — past days cannot be loaded.</p>
+          <p>Microsoft offers no &quot;Sign in with Microsoft&quot; for Clarity data; this key is the only way it shares the numbers. It can only read statistics — it cannot change anything in Clarity — and you can delete it there at any time.</p>
+          <p>Clarity shares the last 24 hours only, so the platform loads once a day right after midnight and history builds up from today.</p>
         </div>
       </Card>
     </div>
