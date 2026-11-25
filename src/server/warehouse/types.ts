@@ -34,6 +34,8 @@ export interface Warehouse {
   getDatasetLabels(ref: DatasetRef): Promise<Partial<DatasetLabels> | null>;
   /** Drops the dataset and all its tables. Returns 'not_found' if it is already gone. Callers must verify labels first. */
   deleteDataset(ref: DatasetRef): Promise<"deleted" | "not_found">;
+  /** Empties the data tables (raw, normalized, mart) and keeps the dataset and schema. */
+  clearData(ref: DatasetRef): Promise<void>;
   ensureSchema(ref: DatasetRef, version: number): Promise<number>;
   insertRaw(ref: DatasetRef, rows: RawRecord[]): Promise<{ written: number; stats: QueryStats }>;
   upsertNormalized(ref: DatasetRef, rows: NormalizedRow[]): Promise<{ written: number; stats: QueryStats }>;

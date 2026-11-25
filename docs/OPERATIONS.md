@@ -67,6 +67,11 @@ buffer (GA4 60 min, Ads 30 min) + 0–15 min deterministic jitter. At most 4 con
 - The warehouse keeps full history. Syncs MERGE by grain and never truncate to a rolling window.
 - Local simulated warehouse: one schema per dataset in database `mip_warehouse`.
 - **No automatic deletion** on user deletion, failed provisioning, disconnect or plan change.
+- **Clear all data (manual, owner/admin only)** — Settings → "Clear all data", typed-name confirmation. The
+  `clear_company_data` RPC removes connections (stored tokens, schedules, runs, checkpoints), CSV uploads, data checks
+  and pending sign-ins and queues a `clear_data` job; the worker verifies the dataset labels and empties
+  `raw_records`, `norm_campaign_daily` and `mart_daily_source`. The company, its settings and its dataset stay.
+  Refused while the dataset is being prepared, another job is queued or an import is running.
 - **Company deletion (manual, owner/admin only)** — Settings → "Delete company", confirmed by typing the company name.
   1. `delete_company` RPC: marks the company `deleting` (hidden from the app; `can_manage_company` is false, so no new
      syncs, uploads or edits), cancels queued runs, disables schedules, deletes stored OAuth tokens, writes

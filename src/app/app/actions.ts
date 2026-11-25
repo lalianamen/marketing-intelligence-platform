@@ -38,7 +38,7 @@ function friendly(message: string | undefined): string {
   if (/already provisioned/i.test(message)) return "This company's data space is already ready.";
   if (/disconnected/i.test(message)) return "This connection is disconnected.";
   if (/confirmation name/i.test(message)) return "The name you typed does not match the company name. Nothing was deleted.";
-  if (/company busy/i.test(message)) return "The company's data space is still being prepared. Try again in a minute.";
+  if (/company busy/i.test(message)) return "The company is busy (its data space is being prepared or an import is running). Try again in a minute.";
   return "Something went wrong. Please try again.";
 }
 
@@ -233,4 +233,16 @@ export async function chooseGoogleAccountsAction(form: FormData): Promise<void> 
   for (const id of ids) await supabase.rpc("request_sync", { p_connection_id: id });
   kickJobs();
   redirect(`/app/connections?connected=${encodeURIComponent(chosen.map((a) => a.name).join(", "))}`);
+}
+
+export async function clearCompanyDataAction(form: FormData): Promise<void> {
+  const { supabase } = await requireUser();
+  const r = await supabase.rpc("clear_company_data", {
+    p_company_id: String(form.get("company_id") ?? ""),
+    p_confirm_name: String(form.get("confirm_name") ?? "").slice(0, 200),
+  });
+  if (r.error) redirect("/app/settings?error=" + encodeURIComponent(friendly(r.error.message)));
+  revalidatePath("/app", "layout");
+  kickJobs();
+  redirect("/app/settings?cleared=1");
 }

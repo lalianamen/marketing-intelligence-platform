@@ -111,6 +111,15 @@ export class LocalWarehouse implements Warehouse {
     }
   }
 
+  async clearData(ref: DatasetRef): Promise<void> {
+    const s = schema(ref);
+    try {
+      await this.pool.query(`truncate ${s}.raw_records, ${s}.norm_campaign_daily, ${s}.mart_daily_source`);
+    } catch (err) {
+      mapPgError(err);
+    }
+  }
+
   async deleteDataset(ref: DatasetRef): Promise<"deleted" | "not_found"> {
     const s = schema(ref);
     try {

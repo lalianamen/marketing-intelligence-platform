@@ -77,3 +77,35 @@ export async function reconcileDeletions(db: Queryable): Promise<number> {
   );
   return res.rowCount ?? 0;
 }
+
+/** Worker side of "Clear all data": empty the company's warehouse tables, keep the dataset. */
+export async function clearCompanyData(db: Queryable, job: ClaimedJob, deps: ProvisionDeps): Promise<void> {
+  const company = (
+    await db.query<{ id: string; workspace_id: string; status: string }>(
+      `select id, workspace_id, status from public.companies where id = $1 and workspace_id = $2`,
+      [job.company_id, job.workspace_id],
+    )
+  ).rows[0];
+  if (!company || company.status !== "active") return;
+  const resource = await getResourceForCompany(db, company.id);
+  if (!resource) return;
+  const ref = toDatasetRef(resource);
+  try {
+    const warehouse = await deps.getWarehouse(resource.provider);
+    const labels = await warehouse.getDatasetLabels(ref);
+    if (!labels) return;
+    if (labels.mip_company !== company.id || labels.mip_workspace !== company.workspace_id) {
+      throw new ProvisioningError("dataset_owner_mismatch", "dataset labels name a different tenant; refusing to clear", false);
+    }
+    await warehouse.clearData(ref);
+  } catch (err) {
+    if (err instanceof ProvisioningError) throw err;
+    if (err instanceof WarehouseError) throw new ProvisioningError(`warehouse_${err.code}`, err.message, err.retryable);
+    throw new ProvisioningError("unexpected", (err as Error).message ?? "unexpected error", true);
+  }
+  await db.query(
+    `insert into public.audit_logs (workspace_id, company_id, actor_type, action, target_type, target_id, metadata)
+     values ($1, $2::uuid, 'worker', 'company.data_cleared', 'company', $2::text, $3)`,
+    [company.workspace_id, company.id, JSON.stringify({ provider: resource.provider })],
+  );
+}

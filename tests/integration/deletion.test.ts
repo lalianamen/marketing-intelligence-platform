@@ -81,4 +81,24 @@ describe("company deletion", () => {
     expect(job).toMatchObject({ status: "failed", last_error_code: "dataset_owner_mismatch" });
     expect((await pool.query(`select status from public.companies where id = $1`, [c])).rows[0].status).toBe("deleting");
   });
+
+  it("clear all data empties the company but keeps it and its dataset", async () => {
+    const { c, ref } = await readyCompanyWithData(A, "Clear Me");
+    expect((await A.client.rpc("clear_company_data", { p_company_id: c, p_confirm_name: "nope" })).error?.message).toMatch(/confirmation name/);
+    expect((await B.client.rpc("clear_company_data", { p_company_id: c, p_confirm_name: "Clear Me" })).error?.message).toMatch(/not found/);
+    expect((await A.client.rpc("clear_company_data", { p_company_id: c, p_confirm_name: "clear me" })).error).toBeNull();
+    for (const t of ["company_connections", "csv_uploads", "sync_runs"]) {
+      expect((await pool.query(`select count(*)::int n from public.${t} where company_id = $1`, [c])).rows[0].n, t).toBe(0);
+    }
+    await drain(await workerDeps());
+    const wh = await localWarehouse();
+    expect(await wh.getDatasetLabels(ref)).not.toBeNull();
+    expect((await wh.queryDaily(ref, { from: "2026-10-01", to: "2026-11-30" })).rows).toEqual([]);
+    expect((await pool.query(`select status from public.companies where id = $1`, [c])).rows[0].status).toBe("active");
+    // Works again afterwards.
+    const up = await storeValidatedUpload(pool, { userId: A.id, companyId: c, filename: "d.csv", text: CSV, byteSize: CSV.length, now: new Date("2026-11-23T12:00:00Z") });
+    expect((await A.client.rpc("queue_csv_import", { p_upload_id: up.uploadId })).error).toBeNull();
+    await drain(await workerDeps());
+    expect((await wh.queryDaily(ref, { from: "2026-10-01", to: "2026-11-30" })).rows.length).toBeGreaterThan(0);
+  });
 });

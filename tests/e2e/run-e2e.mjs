@@ -199,9 +199,9 @@ try {
   await page.waitForURL(/\/app\/settings$/);
   await page.click('button:has-text("Delete company")');
   await page.locator("dialog[open]").getByText("will be permanently deleted from the database").waitFor();
-  const confirmBtn = page.locator('button:has-text("Delete company and its data")');
+  const confirmBtn = page.locator('dialog[open] button:has-text("Delete company and its data")');
   assert.ok(await confirmBtn.isDisabled(), "delete stays disabled until the name is typed");
-  await page.fill('input[name="confirm_name"]', "Sunrise Heating & Air (demo)");
+  await page.locator("dialog[open] input[name=\"confirm_name\"]").fill("Sunrise Heating & Air (demo)");
   await page.screenshot({ path: `${OUT}/08-delete-dialog.png`, fullPage: true });
   await confirmBtn.click();
   await page.waitForURL(/deleted=1/);

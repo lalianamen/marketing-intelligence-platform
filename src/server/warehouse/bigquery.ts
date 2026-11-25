@@ -194,6 +194,12 @@ export class BigQueryWarehouse implements Warehouse {
     }
   }
 
+  async clearData(ref: DatasetRef): Promise<void> {
+    for (const t of ["raw_records", "norm_campaign_daily", "mart_daily_source"]) {
+      await this.run(ref, `TRUNCATE TABLE ${this.fq(ref, t)}`);
+    }
+  }
+
   async deleteDataset(ref: DatasetRef): Promise<"deleted" | "not_found"> {
     assertSafeProjectId(ref.projectId);
     assertSafeIdentifier(ref.datasetId, "dataset id");

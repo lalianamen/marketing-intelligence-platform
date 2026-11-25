@@ -4,7 +4,7 @@ import { updateCompanyAction } from "../actions";
 import { DeleteCompanyButton } from "@/components/DeleteCompanyButton";
 import { BUSINESS_PROFILES, BUSINESS_TYPES } from "@/lib/businessTypes";
 
-export default async function CompanySettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string }> }) {
+export default async function CompanySettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string; cleared?: string }> }) {
   const sp = await searchParams;
   const ctx = await getCompanyContext();
   const isAdmin = ["owner", "admin"].includes(ctx.workspace.role);
@@ -13,6 +13,7 @@ export default async function CompanySettingsPage({ searchParams }: { searchPara
       <h1 className="text-2xl font-semibold">Company settings</h1>
       {sp.saved && <Notice tone="green">Saved.</Notice>}
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
+      {sp.cleared && <Notice tone="green">All data of this company was cleared. You can connect sources and upload files again.</Notice>}
       <Card title="Company details">
           <form action={updateCompanyAction} className="space-y-3">
             <input type="hidden" name="company_id" value={ctx.company.id} />
@@ -28,6 +29,16 @@ export default async function CompanySettingsPage({ searchParams }: { searchPara
             <Button variant="secondary">Save</Button>
           </form>
         </Card>
+
+      {isAdmin && (
+        <section className="rounded-xl border border-amber-200 bg-white p-5" data-testid="clear-company-data">
+          <h2 className="text-base font-semibold text-amber-900">Clear all data</h2>
+          <p className="mt-1 text-sm text-gray-700">
+            Start over: removes every connection, stored sign-in, uploaded file and all numbers of this company from the database. The company and its settings stay.
+          </p>
+          <div className="mt-3"><DeleteCompanyButton mode="clear" companyId={ctx.company.id} companyName={ctx.company.name} /></div>
+        </section>
+      )}
 
       {isAdmin && (
         <section className="rounded-xl border border-red-200 bg-white p-5" data-testid="delete-company">

@@ -4,7 +4,7 @@ import { redact } from "../server/crypto";
 import { withTransaction } from "../server/db";
 import { claimJob, completeJob, failJob, recoverExpiredLeases } from "../server/jobs/queue";
 import { ProvisioningError, provisionCompanyDataset, reconcileProvisioning } from "../server/provisioning/provision";
-import { deleteCompanyDataset, reconcileDeletions } from "../server/provisioning/deprovision";
+import { clearCompanyData, deleteCompanyDataset, reconcileDeletions } from "../server/provisioning/deprovision";
 import { ensureConfiguredProject } from "../server/registry/registry";
 import { enqueueDueSyncs } from "../server/scheduling/schedule";
 import { markConnectionFailure, processSyncRun, SyncError, type SyncDeps } from "../server/sync/runSync";
@@ -43,9 +43,15 @@ export async function runProvisioningOnce(deps: WorkerDeps): Promise<"idle" | "s
   const log = deps.log ?? jsonLog;
   const job = await claimJob(deps.pool, "provisioning_jobs", deps.workerId, deps.leaseSeconds ?? 300);
   if (!job) return "idle";
-  const kind = job.kind === "delete_dataset" ? "delete_dataset" : "create_dataset";
+  const kind = job.kind === "delete_dataset" || job.kind === "clear_data" ? job.kind : "create_dataset";
   log({ level: "info", msg: "provisioning.start", job_id: job.id, company_id: job.company_id, kind, attempt: job.attempts });
   try {
+    if (kind === "clear_data") {
+      await clearCompanyData(deps.pool, job, { cfg: deps.cfg, getWarehouse: deps.getWarehouse });
+      await completeJob(deps.pool, "provisioning_jobs", job, deps.workerId);
+      log({ level: "info", msg: "company.data_cleared", job_id: job.id, company_id: job.company_id });
+      return "succeeded";
+    }
     if (kind === "delete_dataset") {
       const del = await deleteCompanyDataset(deps.pool, job, { cfg: deps.cfg, getWarehouse: deps.getWarehouse });
       // The job row is gone with the company (cascade); completing it is a no-op then.
