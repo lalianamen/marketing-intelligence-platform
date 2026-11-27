@@ -13,7 +13,8 @@ Last updated: 2026-11-27. Status meanings: **Working** = connected to a real acc
 | Stripe | **Working** (live) | live |
 | Bing Webmaster Tools | Implemented, **not verified live** ("Connect with Bing" sign-in or API key; mocked tests; Bing's error answers checked against the real API) | live |
 | Google Ads | Implemented, **not verified live** (no Google Ads account yet); simulated mode working | live, simulated |
-| Meta Ads, Microsoft Advertising, Semrush, TikTok, Shopify, WordPress, CRM, call tracking | Planned (catalog entry only); use CSV meanwhile | — |
+| Meta Ads | Implemented, **not verified live** ("Connect with Facebook"; mocked tests) | live |
+| Microsoft Advertising, Semrush, TikTok, Shopify, WordPress, CRM, call tracking | Planned (catalog entry only); use CSV meanwhile | — |
 | Yelp Ads | `requires_partner_access`; not available, no scraping | — |
 
 ## Common contract
@@ -231,6 +232,30 @@ Google user can read and connects it:
   News, Images, Videos and Knowledge Panel), added to the search totals next to Search Console. Query/page rows are
   table-only (`role: "table"`): Bing returns only top queries/pages and refreshes them weekly, so lookback is 14 days.
 - Rate limits for the stats methods are not documented.
+
+## Meta Ads (implemented, not verified live)
+
+- Connect: Add connector → Meta Ads → **Connect with Facebook** → Facebook's screen (permission `ads_read`, or a
+  Facebook Login for Business configuration when `META_LOGIN_CONFIG_ID` is set) → back in the app. One active ad account
+  is connected at once; several → the "choose" page (grouped by business). Closed/disabled accounts are skipped.
+- Token: code → short-lived token → `fb_exchange_token` → long-lived user token, stored encrypted. Meta: apps with
+  Marketing API access get long-lived tokens that do not expire by time, but a token can be invalidated (password
+  change, app removed) → error 190 → `auth_expired` → "Reconnect". Every call carries `appsecret_proof`.
+- Data: `GET /{act_id}/insights`, `level=campaign`, `time_increment=1`, `time_range`, `use_unified_attribution_setting=true`
+  (matches Ads Manager), paging followed. Ad account time zone and currency from `GET /{act_id}`.
+- Columns (`src/lib/metaCatalog.ts`): base `date, campaign_id, campaign_name, spend, impressions, clicks, purchases,
+  purchase_value, leads`; one optional breakdown: `platform` (`publisher_platform`) or `country`.
+- Purchases / leads / purchase value: one action type each, first found of `omni_purchase, purchase,
+  offsite_conversion.fb_pixel_purchase, onsite_web_purchase` and `lead, onsite_conversion.lead_grouped,
+  offsite_conversion.fb_pixel_lead` (Meta's types overlap, so they are never added up).
+- Dashboard: spend, impressions, clicks, ad-platform conversions (purchases), leads and attributed revenue per campaign/day.
+- Lookback/finalization 7 days (Meta: insights refresh every 15 minutes and settle after up to 28 days).
+- Errors: 190/102 → `auth_expired`; 4, 17, 32, 613, 80000–80014 → `rate_limited` (retried); 10, 200–299 → `permission_denied`.
+- Administrator, once: a Meta app (developers.facebook.com, type Business) with **Facebook Login** (or Facebook Login for
+  Business) and the **Marketing API** product; valid OAuth redirect URI `<APP_URL>/api/oauth/meta/callback`;
+  `META_APP_ID` / `META_APP_SECRET` in the server env. Until the app has **Advanced (Full) access to `ads_read`** (App
+  Review + Business Verification), only people with a role in the app (admins, developers, testers) can connect.
+  Graph API version: `META_API_VERSION` (default `v27.0`).
 
 ## Future connectors: design notes, no access promised
 

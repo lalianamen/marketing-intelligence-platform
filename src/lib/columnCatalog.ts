@@ -15,6 +15,7 @@ import { GSC_GROUPS } from "./gscCatalog";
 import { CLARITY_GROUPS, CLARITY_MAX_BREAKDOWNS } from "./clarityCatalog";
 import { STRIPE_GROUPS } from "./stripeCatalog";
 import { BING_GROUPS, BING_MAX_BREAKDOWNS } from "./bingCatalog";
+import { META_GROUPS, META_MAX_BREAKDOWNS } from "./metaCatalog";
 
 export interface ColumnCatalog {
   provider: string;
@@ -88,6 +89,7 @@ const CATALOGS: Record<string, ColumnCatalog> = {
   },
   google_search_console: generic("google_search_console", "columns", GSC_GROUPS),
   stripe: generic("stripe", "columns", STRIPE_GROUPS),
+  meta_ads: generic("meta_ads", "columns", META_GROUPS, { maxBreakdowns: META_MAX_BREAKDOWNS, sourceName: "Meta" }),
   bing_webmaster: generic("bing_webmaster", "columns", BING_GROUPS, { maxBreakdowns: BING_MAX_BREAKDOWNS, sourceName: "Bing" }),
   microsoft_clarity: generic("microsoft_clarity", "columns", CLARITY_GROUPS, { maxBreakdowns: CLARITY_MAX_BREAKDOWNS, metricsFromData: true, sourceName: "Clarity" }),
 };

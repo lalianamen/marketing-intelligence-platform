@@ -1,7 +1,7 @@
 import { getCompanyContext } from "@/server/appContext";
 import { getUser } from "@/server/supabase/server";
 import { dataSpaceStatus, loadConnections, PROVIDER_LABEL } from "@/server/companyStatus";
-import { bingOAuthConfigured, googleOAuthConfigured, loadConfig } from "@/server/config";
+import { bingOAuthConfigured, googleOAuthConfigured, loadConfig, metaOAuthConfigured } from "@/server/config";
 import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
 import { enableSampleConnectionAction } from "../../actions";
 
@@ -15,6 +15,7 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
   const cfg = loadConfig();
   const oauthReady = googleOAuthConfigured(cfg);
   const bingReady = bingOAuthConfigured(cfg);
+  const metaReady = metaOAuthConfigured(cfg);
   // Only what can be connected today. Sample data is offered only where live Google sign-in is not configured
   // (local development); Google Ads only once its API access for real accounts is approved (GOOGLE_ADS_ENABLED).
   // Search Console has no sample data: shown only when live Google sign-in works.
@@ -49,6 +50,15 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
             <p className="mt-2 text-xs text-gray-500">You create the key in Stripe (Developers → API keys). Takes a minute.</p>
           </div>
         </Card>
+        {metaReady && (
+          <Card title="Meta Ads (Facebook + Instagram)" actions={live("meta_ads") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
+            <p className="text-sm text-gray-600">Spend, impressions, clicks, purchases and leads of your Facebook and Instagram ads, per campaign and day.</p>
+            <div className="mt-4">
+              <LinkButton href={`/api/oauth/meta/start?company=${company.id}`}>Connect with Facebook</LinkButton>
+              <p className="mt-2 text-xs text-gray-500">Sign in with the Facebook account that runs your ads. Read only.</p>
+            </div>
+          </Card>
+        )}
         <Card title="Bing Webmaster Tools" actions={connections.some((c) => c.provider_id === "bing_webmaster" && c.mode === "live") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
           <p className="text-sm text-gray-600">Clicks and impressions of your site on Bing per day, with top search queries or pages. Adds to the dashboard&apos;s search totals.</p>
           <div className="mt-4">

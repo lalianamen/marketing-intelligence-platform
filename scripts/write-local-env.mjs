@@ -32,6 +32,8 @@ const lines = [
   `GOOGLE_ADS_LOGIN_CUSTOMER_ID=${keep("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "")}`,
   `BING_OAUTH_CLIENT_ID=${keep("BING_OAUTH_CLIENT_ID", "")}`,
   `BING_OAUTH_CLIENT_SECRET=${keep("BING_OAUTH_CLIENT_SECRET", "")}`,
+  `META_APP_ID=${keep("META_APP_ID", "")}`,
+  `META_APP_SECRET=${keep("META_APP_SECRET", "")}`,
   "",
 ];
 writeFileSync(".env.local", lines.join("\n"), { mode: 0o600 });

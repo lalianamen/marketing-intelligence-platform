@@ -18,7 +18,7 @@ const PATTERNS = [
   ["Stripe live key", /\b(sk|rk)_live_[0-9A-Za-z]{20,}/],
   ["AWS access key", /\bAKIA[0-9A-Z]{16}\b/],
   ["GitHub token", /\bgh[pousr]_[A-Za-z0-9]{36,}\b/],
-  ["assigned secret", /^(?:SUPABASE_SERVICE_ROLE_KEY|TOKEN_ENCRYPTION_KEY|GOOGLE_OAUTH_CLIENT_SECRET|GOOGLE_ADS_DEVELOPER_TOKEN|BING_OAUTH_CLIENT_SECRET)=\S+/m],
+  ["assigned secret", /^(?:SUPABASE_SERVICE_ROLE_KEY|TOKEN_ENCRYPTION_KEY|GOOGLE_OAUTH_CLIENT_SECRET|GOOGLE_ADS_DEVELOPER_TOKEN|BING_OAUTH_CLIENT_SECRET|META_APP_SECRET)=\S+/m],
 ];
 // Lines may opt out only with an explicit marker (used for synthetic test fixtures).
 const ALLOW_MARKER = "secret-scan:allow-fixture";
@@ -42,13 +42,13 @@ if (process.argv.includes("--bundle")) {
   }
   // Values that must never reach the browser (read from the local env, if present).
   const env = existsSync(".env.local") ? readFileSync(".env.local", "utf8") : "";
-  const serverValues = ["SUPABASE_SERVICE_ROLE_KEY", "TOKEN_ENCRYPTION_KEY", "DATABASE_URL", "WAREHOUSE_LOCAL_URL", "GOOGLE_OAUTH_CLIENT_SECRET", "BING_OAUTH_CLIENT_SECRET"]
+  const serverValues = ["SUPABASE_SERVICE_ROLE_KEY", "TOKEN_ENCRYPTION_KEY", "DATABASE_URL", "WAREHOUSE_LOCAL_URL", "GOOGLE_OAUTH_CLIENT_SECRET", "BING_OAUTH_CLIENT_SECRET", "META_APP_SECRET"]
     .map((k) => [k, new RegExp(`^${k}=(.+)$`, "m").exec(env)?.[1]])
     .filter(([, v]) => v && v.length > 8);
   const extra = [
     ["service role marker", /service_role/],
     ["postgres connection string", /postgres(?:ql)?:\/\/[^"'\s]+:[^"'\s]+@/],
-    ["server env name", /SUPABASE_SERVICE_ROLE_KEY|TOKEN_ENCRYPTION_KEY|GOOGLE_OAUTH_CLIENT_SECRET|BING_OAUTH_CLIENT_SECRET/],
+    ["server env name", /SUPABASE_SERVICE_ROLE_KEY|TOKEN_ENCRYPTION_KEY|GOOGLE_OAUTH_CLIENT_SECRET|BING_OAUTH_CLIENT_SECRET|META_APP_SECRET/],
   ];
   const walk = (d) => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
   for (const f of walk(root)) {

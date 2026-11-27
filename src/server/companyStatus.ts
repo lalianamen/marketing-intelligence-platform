@@ -92,6 +92,7 @@ export const PROVIDER_LABEL: Record<string, string> = {
   microsoft_clarity: "Microsoft Clarity",
   stripe: "Stripe",
   bing_webmaster: "Bing Webmaster Tools",
+  meta_ads: "Meta Ads",
 };
 
 export function modeBadge(mode: string): { tone: "green" | "amber" | "blue"; text: string } {

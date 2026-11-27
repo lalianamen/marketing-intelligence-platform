@@ -36,6 +36,15 @@ export interface ServerConfig {
     clientSecret: string | undefined;
     redirectUri: string;
   };
+  /** Meta Ads "Connect with Facebook" (a Meta app with Facebook Login and the Marketing API). */
+  meta: {
+    appId: string | undefined;
+    appSecret: string | undefined;
+    apiVersion: string;
+    redirectUri: string;
+    /** Facebook Login for Business configuration ID (optional). */
+    configId: string | undefined;
+  };
   initialBackfillDays: number;
 }
 
@@ -89,6 +98,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       clientSecret: env.BING_OAUTH_CLIENT_SECRET || undefined,
       redirectUri: env.BING_OAUTH_REDIRECT_URI ?? `${appUrl}/api/oauth/bing/callback`,
     },
+    meta: {
+      appId: env.META_APP_ID || undefined,
+      appSecret: env.META_APP_SECRET || undefined,
+      apiVersion: env.META_API_VERSION || "v27.0",
+      redirectUri: env.META_OAUTH_REDIRECT_URI ?? `${appUrl}/api/oauth/meta/callback`,
+      configId: env.META_LOGIN_CONFIG_ID || undefined,
+    },
     initialBackfillDays: int("INITIAL_BACKFILL_DAYS", 30),
   };
 }
@@ -101,4 +117,9 @@ export function googleOAuthConfigured(cfg: ServerConfig): boolean {
 /** Whether "Sign in with Bing" is configured (otherwise Bing connects with an API key). */
 export function bingOAuthConfigured(cfg: ServerConfig): boolean {
   return Boolean(cfg.bing.clientId && cfg.bing.clientSecret && cfg.tokenEncryptionKey);
+}
+
+/** Whether "Connect with Facebook" (Meta Ads) is configured. */
+export function metaOAuthConfigured(cfg: ServerConfig): boolean {
+  return Boolean(cfg.meta.appId && cfg.meta.appSecret && cfg.tokenEncryptionKey);
 }
