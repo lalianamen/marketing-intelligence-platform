@@ -33,13 +33,16 @@ export interface TeamInvitation {
 export async function loadTeam(db: Queryable, actorId: string, workspaceId: string): Promise<{ members: TeamMember[]; invitations: TeamInvitation[] }> {
   await requireWorkspaceRole(db, actorId, workspaceId, ["owner", "admin"]);
   const rows = (
+    // auth.users is read only through private.user_emails (the app's DB role has no access to the auth schema).
     await db.query<{ user_id: string; email: string; company_id: string; company_name: string; role: MemberRole }>(
-      `select cm.user_id, u.email, cm.company_id, c.name as company_name, cm.role
-         from public.company_members cm
-         join public.companies c on c.id = cm.company_id and c.status = 'active'
-         join auth.users u on u.id = cm.user_id
-        where cm.workspace_id = $1
-        order by u.email, c.name`,
+      `with m as (
+         select cm.user_id, cm.company_id, c.name as company_name, cm.role
+           from public.company_members cm
+           join public.companies c on c.id = cm.company_id and c.status = 'active'
+          where cm.workspace_id = $1)
+       select m.user_id, coalesce(e.email, '(deleted account)') as email, m.company_id, m.company_name, m.role
+         from m left join private.user_emails(array(select distinct user_id from m)) e on e.id = m.user_id
+        order by 2, m.company_name`,
       [workspaceId],
     )
   ).rows;
@@ -85,10 +88,10 @@ export async function inviteUser(
     await db.query<{ id: string }>(`select id from public.companies where workspace_id = $1 and status = 'active' and id = any($2::uuid[])`, [args.workspaceId, ids])
   ).rows.map((r) => r.id);
   if (ok.length !== ids.length) return "One of the chosen companies was not found.";
-  const self = (await db.query<{ email: string }>(`select lower(email) as email from auth.users where id = $1`, [actorId])).rows[0]?.email;
+  const self = (await db.query<{ email: string }>(`select email from private.user_emails(array[$1]::uuid[])`, [actorId])).rows[0]?.email;
   if (self === args.email) return "That is your own email: you already have full access.";
   const owner = (
-    await db.query(`select 1 from public.workspace_members wm join auth.users u on u.id = wm.user_id where wm.workspace_id = $1 and lower(u.email) = $2`, [args.workspaceId, args.email])
+    await db.query(`select 1 from public.workspace_members wm where wm.workspace_id = $1 and wm.user_id = private.user_id_by_email($2)`, [args.workspaceId, args.email])
   ).rowCount;
   if (owner) return "This person is already a member of the whole workspace.";
   await db.query(
@@ -103,8 +106,8 @@ export async function inviteUser(
     )
   ).rows[0]!.id;
   // Someone who already has an account gets the access right away; others on sign-up.
-  const existing = (await db.query<{ id: string }>(`select id from auth.users where lower(email) = $1 and email_confirmed_at is not null`, [args.email])).rows[0];
-  if (existing) {
+  const existing = (await db.query<{ id: string | null }>(`select private.user_id_by_email($1, true) as id`, [args.email])).rows[0];
+  if (existing?.id) {
     await db.query(
       `insert into public.company_members (company_id, workspace_id, user_id, role)
        select c.id, c.workspace_id, $3, $4 from public.companies c where c.workspace_id = $1 and c.id = any($2::uuid[])
@@ -113,7 +116,7 @@ export async function inviteUser(
     );
     await db.query(`update public.company_invitations set accepted_at = now(), accepted_by = $2 where id = $1`, [id, existing.id]);
   }
-  await audit(db, args.workspaceId, actorId, "invitation.created", id, { role: args.role, companies: ok.length, immediate: Boolean(existing) });
+  await audit(db, args.workspaceId, actorId, "invitation.created", id, { role: args.role, companies: ok.length, immediate: Boolean(existing?.id) });
   return null;
 }
 
