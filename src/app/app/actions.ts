@@ -518,3 +518,59 @@ export async function connectStripeAction(form: FormData): Promise<void> {
   revalidatePath("/app", "layout");
   redirect(`/app/connections/${id}?setup=1`);
 }
+
+/** Connects Bing Webmaster Tools with the user's API key (checked by listing the key's verified sites). */
+export async function connectBingAction(form: FormData): Promise<void> {
+  const { user } = await requireUser();
+  const companyId = String(form.get("company_id") ?? "");
+  const key = String(form.get("key") ?? "").trim();
+  const wanted = String(form.get("site") ?? "").trim();
+  const back = (msg: string) => redirect("/app/connections/bing?error=" + encodeURIComponent(msg));
+  const { bingKeyProblem, listBingSites, sameBingSite } = await import("@/server/connectors/bing");
+  const problem = bingKeyProblem(key);
+  if (problem) back(problem);
+  if (wanted.length > 300) back("The site address is too long.");
+  const db = getPool();
+  const cfg = loadConfig();
+  if (!cfg.tokenEncryptionKey) back("Connections are not configured on this server yet.");
+  if ((await getCompanyAccess(db, user.id, companyId)) !== "manage") back("Not found, or you do not have access.");
+  let sites: string[] = [];
+  try {
+    sites = await listBingSites(fetch, key);
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    console.error(JSON.stringify({ level: "warn", msg: "bing.connect_check_failed", code, error: String((err as Error).message).slice(0, 200) }));
+    back(
+      code === "auth_expired"
+        ? "Bing did not accept this key. Check that it was copied completely (and that it was not regenerated since)."
+        : code === "timeout"
+        ? "Bing did not answer in time. Please try again in a minute."
+        : "Could not reach Bing Webmaster Tools. Please try again in a minute.",
+    );
+  }
+  if (sites.length === 0) back("This Bing account has no verified sites yet. Add and verify your site in Bing Webmaster Tools first (you can import it from Google Search Console).");
+  let site: string | undefined;
+  if (wanted) {
+    site = sites.find((s) => sameBingSite(s, wanted));
+    if (!site) back(`This key has no verified site “${wanted}”. Its sites: ${sites.slice(0, 10).join(", ")}.`);
+  } else if (sites.length === 1) {
+    site = sites[0];
+  } else {
+    back(`This Bing account has several sites. Type the one to connect in “Site”: ${sites.slice(0, 10).join(", ")}.`);
+  }
+  const ws = (await db.query<{ workspace_id: string }>(`select workspace_id from public.companies where id = $1`, [companyId])).rows[0]!.workspace_id;
+  const id = await withTransaction((c) =>
+    createLiveConnection(c, {
+      workspaceId: ws,
+      companyId,
+      userId: user.id,
+      provider: "bing_webmaster",
+      account: { id: site!, name: site!, group: null },
+      refreshToken: key,
+      scopes: [],
+      encryptionKey: cfg.tokenEncryptionKey!,
+    }),
+  );
+  revalidatePath("/app", "layout");
+  redirect(`/app/connections/${id}?setup=1`);
+}

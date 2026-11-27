@@ -127,6 +127,14 @@ try {
   assert.equal(await page.locator('[data-testid="stripe-form"]').evaluate((f) => f.checkValidity()), true);
   await page.goto(`${BASE}/app/connections/new`);
   step("Stripe: connect page takes only a read-only key (rk_), refuses secret keys");
+  await page.click('a:has-text("Connect with an API key")');
+  await page.waitForURL(/\/app\/connections\/bing$/);
+  await page.fill('[data-testid="bing-form"] input[name="key"]', "not a key");
+  assert.equal(await page.locator('[data-testid="bing-form"]').evaluate((f) => f.checkValidity()), false, "a malformed key is stopped in the browser");
+  await page.fill('[data-testid="bing-form"] input[name="key"]', "0123456789abcdef0123456789abcdef");
+  assert.equal(await page.locator('[data-testid="bing-form"]').evaluate((f) => f.checkValidity()), true);
+  await page.goto(`${BASE}/app/connections/new`);
+  step("Bing Webmaster Tools: connect page takes an API key (hidden) and an optional site");
 
   await page.goto(`${BASE}/app/connections/csv`);
   await page.setInputFiles('input[name="file"]', "public/sample-marketing-data.csv");

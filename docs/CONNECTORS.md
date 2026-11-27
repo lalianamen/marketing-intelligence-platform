@@ -1,15 +1,19 @@
 # Connectors
 
-Last updated: 2026-11-23. Status meanings: **Working** = verified end-to-end in this repository;
+Last updated: 2026-11-27. Status meanings: **Working** = connected to a real account and loading in production;
 **Implemented, not verified live** = code + mocked tests, never run against the real provider;
 **Simulated** = sample-data adapter with the same shape, always labelled SIMULATED.
 
 | Provider | Status | Mode(s) |
 |---|---|---|
 | CSV import | **Working** (unit, integration, E2E) | manual |
-| GA4 | Implemented, **not verified live**; simulated mode working | live, simulated |
-| Google Ads | Implemented, **not verified live**; simulated mode working | live, simulated |
-| Meta Ads, Microsoft Advertising, Microsoft Clarity, Semrush, TikTok, Shopify, WordPress, CRM, call tracking | Planned (catalog entry only); use CSV meanwhile | — |
+| GA4 | **Working** (live on licena.us); simulated mode for local development | live, simulated |
+| Google Search Console | **Working** (live on licena.us) | live |
+| Microsoft Clarity | **Working** (live on licena.us) | live |
+| Stripe | **Working** (live) | live |
+| Bing Webmaster Tools | Implemented, **not verified live** (mocked tests; Bing's error answer for a wrong key checked against the real API) | live |
+| Google Ads | Implemented, **not verified live** (no Google Ads account yet); simulated mode working | live, simulated |
+| Meta Ads, Microsoft Advertising, Semrush, TikTok, Shopify, WordPress, CRM, call tracking | Planned (catalog entry only); use CSV meanwhile | — |
 | Yelp Ads | `requires_partner_access`; not available, no scraping | — |
 
 ## Common contract
@@ -201,6 +205,24 @@ Google user can read and connects it:
   `reporting_category, type`, `status`, `id, description` (one row per transaction).
 - Dashboard: billed revenue per day and currency = charges + refunds + disputes (+ reversals); payouts, fees and
   transfers are not revenue. History can be loaded (up to 400 days, in parts of a month).
+
+## Bing Webmaster Tools (implemented, not verified live)
+
+- Connect: Add connector → Bing Webmaster Tools → paste the API key from Bing Webmaster → Settings → API Access
+  (one key per Bing user, covers all of the user's sites). Checked with `GetUserSites`; one verified site is connected at
+  once, with several the user types which one. Stored encrypted. Regenerating the key in Bing breaks the connection
+  (Reconnect with the new key).
+- API: `https://ssl.bing.com/webmaster/api.svc/json/<Method>?siteUrl=…&apikey=…` (GET; the key is a query parameter,
+  never logged). Answers are `{"d": [...]}`; dates are .NET `"/Date(ms-0700)/"`, read as the day in Bing's offset.
+  A wrong key → HTTP 400 `{"ErrorCode":3,"Message":"ERROR!!! InvalidApiKey"}` (checked against the real API) → `auth_expired`.
+- The stats methods take **no date range**: each returns everything Bing keeps; the connector keeps the days of the window.
+  How far back Bing goes is not documented, so older days of a history load stay empty.
+- Columns (`src/lib/bingCatalog.ts`): base `date, clicks, impressions, avg_click_position, avg_impression_position`;
+  one optional breakdown: `query` (`GetQueryStats`) **or** `page` (`GetPageStats`). Bing has no query × page request.
+- Dashboard: clicks and impressions per day from `GetRankAndTrafficStats` (Microsoft: updated daily; includes Web, Chat,
+  News, Images, Videos and Knowledge Panel), added to the search totals next to Search Console. Query/page rows are
+  table-only (`role: "table"`): Bing returns only top queries/pages and refreshes them weekly, so lookback is 14 days.
+- Rate limits for the stats methods are not documented.
 
 ## Future connectors: design notes, no access promised
 

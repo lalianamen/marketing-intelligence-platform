@@ -4,6 +4,7 @@ import { GoogleAdsConnector } from "./googleAds";
 import { SearchConsoleConnector } from "./searchConsole";
 import { ClarityConnector } from "./clarity";
 import { StripeConnector } from "./stripe";
+import { BingWebmasterConnector } from "./bing";
 import { SimulatedConnector } from "./simulated";
 import { type Connector, ConnectorError } from "./types";
 import type { FetchLike } from "./google";
@@ -17,6 +18,10 @@ export function connectorFor(
   if (providerId === "stripe") {
     if (mode !== "live") throw new ConnectorError("not_configured", "no sample data for Stripe");
     return new StripeConnector({ fetch: fetchImpl });
+  }
+  if (providerId === "bing_webmaster") {
+    if (mode !== "live") throw new ConnectorError("not_configured", "no sample data for Bing Webmaster Tools");
+    return new BingWebmasterConnector({ fetch: fetchImpl });
   }
   if (providerId === "microsoft_clarity") {
     if (mode !== "live") throw new ConnectorError("not_configured", "no sample data for Clarity");

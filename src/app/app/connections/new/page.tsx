@@ -48,6 +48,13 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
             <p className="mt-2 text-xs text-gray-500">You create the key in Stripe (Developers → API keys). Takes a minute.</p>
           </div>
         </Card>
+        <Card title="Bing Webmaster Tools" actions={connections.some((c) => c.provider_id === "bing_webmaster" && c.mode === "live") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
+          <p className="text-sm text-gray-600">Clicks and impressions of your site on Bing per day, with top search queries or pages. Adds to the dashboard&apos;s search totals.</p>
+          <div className="mt-4">
+            <LinkButton href="/app/connections/bing">Connect with an API key</LinkButton>
+            <p className="mt-2 text-xs text-gray-500">You get the key in Bing Webmaster (Settings → API Access). Takes a minute.</p>
+          </div>
+        </Card>
         <Card title="Microsoft Clarity" actions={connections.some((c) => c.provider_id === "microsoft_clarity" && c.mode === "live") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
           <p className="text-sm text-gray-600">How visitors behave on your site: sessions, scroll depth, engagement time, rage and dead clicks, script errors.</p>
           <div className="mt-4">
