@@ -113,7 +113,7 @@ export const ORIGIN_LABEL: Record<Origin, string> = {
   stripe: "Stripe",
   bing_webmaster: "Bing Webmaster Tools",
   meta_ads: "Meta Ads",
-  app_database: "App database",
+  app_database: "Supabase",
 };
 
 export const CONVERSION_TYPE_LABEL: Record<ConversionType, string> = {

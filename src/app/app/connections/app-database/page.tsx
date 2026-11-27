@@ -32,7 +32,7 @@ export default async function AppDatabasePage({ searchParams }: { searchParams: 
   return (
     <div className="max-w-3xl space-y-4">
       <a href="/app/connections/new" className="text-sm text-brand-700 hover:underline">← Add a connector</a>
-      <h1 className="text-2xl font-semibold">Connect your app&apos;s database</h1>
+      <h1 className="text-2xl font-semibold">Connect Supabase</h1>
       <p className="text-sm text-gray-600">
         For apps built on Supabase. The platform gets a login that can <strong>only read</strong> one folder (schema) in your database,{" "}
         <code>marketing_intel</code>, and nothing else. It powers the <strong>Funnel</strong>: where people came from, which steps they took and whether they paid.

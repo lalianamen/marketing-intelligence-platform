@@ -33,8 +33,8 @@ export default async function FunnelPage({ searchParams }: { searchParams: Promi
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">Funnel</h1>
         <EmptyState title="See every step from first visit to payment">
-          Connect your app&apos;s database once. The platform then shows where people came from, which steps they took and who paid.
-          {ctx.access === "manage" && <div className="mt-4"><LinkButton href="/app/connections/app-database">Connect your app&apos;s database</LinkButton></div>}
+          Connect your Supabase project once. The platform then shows where people came from, which steps they took and who paid.
+          {ctx.access === "manage" && <div className="mt-4"><LinkButton href="/app/connections/app-database">Connect Supabase</LinkButton></div>}
         </EmptyState>
       </div>
     );
@@ -71,7 +71,7 @@ export default async function FunnelPage({ searchParams }: { searchParams: Promi
         <div>
           <h1 className="text-2xl font-semibold">Funnel</h1>
           <p className="text-sm text-gray-600">
-            People who first came in this period, by where they came from, and how far they got. Live from your app&apos;s database.
+            People who first came in this period, by where they came from, and how far they got. Live from your Supabase project.
           </p>
         </div>
         <form className="flex flex-wrap items-center gap-2 text-sm" data-testid="funnel-filters">
@@ -93,7 +93,7 @@ export default async function FunnelPage({ searchParams }: { searchParams: Promi
       )}
       {sp.saved && <Notice tone="green">Steps saved.</Notice>}
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
-      {problem && <Notice tone="red">Could not read your app&apos;s database: {problem}</Notice>}
+      {problem && <Notice tone="red">Could not read your Supabase project: {problem}</Notice>}
 
       {result && (
         <>

@@ -59,7 +59,7 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
             </div>
           </Card>
         )}
-        <Card title="Your app's database (Supabase)" actions={live("app_database") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
+        <Card title="Supabase" actions={live("app_database") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
           <p className="text-sm text-gray-600">Sign-ups, trials and payments from your own app. Powers the Funnel: where people came from and who paid.</p>
           <div className="mt-4">
             <LinkButton href="/app/connections/app-database">Connect (3 steps)</LinkButton>

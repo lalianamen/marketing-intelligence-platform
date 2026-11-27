@@ -151,7 +151,7 @@ try {
   await page.goto(`${BASE}/app/funnel`);
   assert.ok(await page.getByText("See every step from first visit to payment").isVisible(), "the Funnel explains what to connect while the check has not passed");
   await page.goto(`${BASE}/app/connections/new`);
-  step("app database: pooler address only, then a read-only script to run; Funnel waits for the check");
+  step("Supabase: pooler address only, then a read-only script to run; Funnel waits for the check");
 
   await page.goto(`${BASE}/app/connections/csv`);
   await page.setInputFiles('input[name="file"]', "public/sample-marketing-data.csv");
