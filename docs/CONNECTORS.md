@@ -11,7 +11,7 @@ Last updated: 2026-11-27. Status meanings: **Working** = connected to a real acc
 | Google Search Console | **Working** (live on licena.us) | live |
 | Microsoft Clarity | **Working** (live on licena.us) | live |
 | Stripe | **Working** (live) | live |
-| Bing Webmaster Tools | Implemented, **not verified live** (mocked tests; Bing's error answer for a wrong key checked against the real API) | live |
+| Bing Webmaster Tools | Implemented, **not verified live** ("Connect with Bing" sign-in or API key; mocked tests; Bing's error answers checked against the real API) | live |
 | Google Ads | Implemented, **not verified live** (no Google Ads account yet); simulated mode working | live, simulated |
 | Meta Ads, Microsoft Advertising, Semrush, TikTok, Shopify, WordPress, CRM, call tracking | Planned (catalog entry only); use CSV meanwhile | — |
 | Yelp Ads | `requires_partner_access`; not available, no scraping | — |
@@ -208,10 +208,18 @@ Google user can read and connects it:
 
 ## Bing Webmaster Tools (implemented, not verified live)
 
-- Connect: Add connector → Bing Webmaster Tools → paste the API key from Bing Webmaster → Settings → API Access
-  (one key per Bing user, covers all of the user's sites). Checked with `GetUserSites`; one verified site is connected at
-  once, with several the user types which one. Stored encrypted. Regenerating the key in Bing breaks the connection
-  (Reconnect with the new key).
+- Connect (normal): Add connector → Bing Webmaster Tools → **Connect with Bing** → Bing's consent screen (OAuth 2.0,
+  scope `webmaster.read`) → back in the app. Nothing to copy. One verified site is connected at once; several → the
+  same "choose" page as Google. Stored secret: `oauth:` + the refresh token (encrypted); each load gets a fresh access
+  token (`POST https://www.bing.com/webmasters/oauth/token`, `grant_type=refresh_token`) and calls
+  `https://www.bing.com/webmaster/api.svc/json/<Method>` with `Authorization: Bearer`. Bing documents no PKCE and no
+  `state`; the app still sends `state` and checks it on return. A wrong token → 400 `{"ErrorCode":18,"Message":"ERROR!!! InvalidToken"}`.
+- Administrator, once: Bing Webmaster → Settings → API Access → **OAuth Client** → name + redirect URI
+  `<APP_URL>/api/oauth/bing/callback` → copy client ID and secret into `BING_OAUTH_CLIENT_ID` / `BING_OAUTH_CLIENT_SECRET`
+  (server env, e.g. Vercel). Until they are set, Bing connects with an API key instead.
+- Fallback: "Connect with an API key instead" → paste the key from Bing Webmaster → Settings → API Access (one key per
+  Bing user). Checked with `GetUserSites`; with several sites the user types which one. Regenerating the key in Bing
+  breaks the connection.
 - API: `https://ssl.bing.com/webmaster/api.svc/json/<Method>?siteUrl=…&apikey=…` (GET; the key is a query parameter,
   never logged). Answers are `{"d": [...]}`; dates are .NET `"/Date(ms-0700)/"`, read as the day in Bing's offset.
   A wrong key → HTTP 400 `{"ErrorCode":3,"Message":"ERROR!!! InvalidApiKey"}` (checked against the real API) → `auth_expired`.

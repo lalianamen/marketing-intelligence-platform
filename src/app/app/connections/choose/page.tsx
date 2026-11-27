@@ -24,6 +24,8 @@ export default async function ChooseAccountsPage({ searchParams }: { searchParam
   if (!row || row.company_id !== ctx.company.id) redirect("/app/connections?oauth=" + encodeURIComponent("This connection attempt expired. Please try again."));
   const isGa4 = row.provider_id === "ga4";
   const isGsc = row.provider_id === "google_search_console";
+  const isBing = row.provider_id === "bing_webmaster";
+  const sitesWord = isBing ? "Bing sites" : "Search Console sites";
   const groups = new Map<string, DiscoveredAccount[]>();
   for (const a of row.accounts) {
     const k = a.group ?? "";
@@ -34,9 +36,9 @@ export default async function ChooseAccountsPage({ searchParams }: { searchParam
     <div className="max-w-2xl space-y-4">
       <div>
         <a href="/app/connections" className="text-sm text-brand-700 hover:underline">← Data Connections</a>
-        <h1 className="mt-1 text-2xl font-semibold">Choose {isGa4 ? "Google Analytics properties" : isGsc ? "Search Console sites" : "Google Ads accounts"}</h1>
+        <h1 className="mt-1 text-2xl font-semibold">Choose {isGa4 ? "Google Analytics properties" : isGsc || isBing ? sitesWord : "Google Ads accounts"}</h1>
         <p className="text-sm text-gray-600">
-          Your Google account has access to {row.accounts.length} {isGa4 ? "properties" : isGsc ? "sites" : "accounts"}. Pick the ones that belong to <strong>{ctx.company.name}</strong>.
+          Your {isBing ? "Bing" : "Google"} account has access to {row.accounts.length} {isGa4 ? "properties" : isGsc || isBing ? "sites" : "accounts"}. Pick the ones that belong to <strong>{ctx.company.name}</strong>.
         </p>
       </div>
       {sp.error && <Notice tone="red">Please choose at least one.</Notice>}
@@ -51,7 +53,7 @@ export default async function ChooseAccountsPage({ searchParams }: { searchParam
                   <input type="checkbox" name="account" value={a.id} defaultChecked={row.accounts.length <= 3 || (i === 0 && groups.size === 1)} />
                   <span className="flex-1">
                     <span className="font-medium text-gray-900">{a.name}</span>
-                    <span className="block text-xs text-gray-500">{isGsc ? "Search Console site" : isGa4 ? `Property ID ${a.id}` : `Customer ID ${a.id.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")}`}</span>
+                    <span className="block text-xs text-gray-500">{isBing ? "Bing site" : isGsc ? "Search Console site" : isGa4 ? `Property ID ${a.id}` : `Customer ID ${a.id.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")}`}</span>
                   </span>
                 </label>
               ))}

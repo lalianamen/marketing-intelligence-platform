@@ -30,6 +30,12 @@ export interface ServerConfig {
     adsLoginCustomerId: string | undefined;
     adsApiVersion: string;
   };
+  /** Bing Webmaster Tools "Sign in with Bing" (OAuth client registered in Bing Webmaster → Settings → API Access). */
+  bing: {
+    clientId: string | undefined;
+    clientSecret: string | undefined;
+    redirectUri: string;
+  };
   initialBackfillDays: number;
 }
 
@@ -78,6 +84,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       adsLoginCustomerId: env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || undefined,
       adsApiVersion: env.GOOGLE_ADS_API_VERSION ?? "v26",
     },
+    bing: {
+      clientId: env.BING_OAUTH_CLIENT_ID || undefined,
+      clientSecret: env.BING_OAUTH_CLIENT_SECRET || undefined,
+      redirectUri: env.BING_OAUTH_REDIRECT_URI ?? `${appUrl}/api/oauth/bing/callback`,
+    },
     initialBackfillDays: int("INITIAL_BACKFILL_DAYS", 30),
   };
 }
@@ -85,4 +96,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 /** Whether Google OAuth for GA4 / Google Ads is configured by an administrator. */
 export function googleOAuthConfigured(cfg: ServerConfig): boolean {
   return Boolean(cfg.google.clientId && cfg.google.clientSecret && cfg.tokenEncryptionKey);
+}
+
+/** Whether "Sign in with Bing" is configured (otherwise Bing connects with an API key). */
+export function bingOAuthConfigured(cfg: ServerConfig): boolean {
+  return Boolean(cfg.bing.clientId && cfg.bing.clientSecret && cfg.tokenEncryptionKey);
 }

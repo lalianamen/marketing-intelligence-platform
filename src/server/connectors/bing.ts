@@ -3,17 +3,79 @@ import { columnCatalog } from "../../lib/columnCatalog";
 import { type Connector, ConnectorError, connectorErrorFromHttp, type FetchContext, type FetchResult, type ProviderDailyRecord } from "./types";
 
 // Bing Webmaster Tools LIVE connector — Bing Webmaster API (JSON).
-// Auth: the user's API key (Bing Webmaster → Settings → API Access), stored
-// encrypted like an OAuth refresh token. One key per Bing user covers all of
-// their verified sites; the connection is for one site (external account id =
-// the site URL as Bing lists it).
+// Auth, two ways (both cover all of the Bing user's verified sites; a connection
+// is for one site, external account id = the site URL as Bing lists it):
+// - "Sign in with Bing" (OAuth 2.0, scope webmaster.read): the stored secret is
+//   "oauth:" + the refresh token; each load gets a short-lived access token.
+// - The user's API key (Bing Webmaster → Settings → API Access): fallback when
+//   the platform's Bing OAuth client is not configured.
 // The stats methods take no dates: each returns everything Bing keeps, and the
 // connector keeps the days of the requested window. Daily totals come from
 // GetRankAndTrafficStats (dashboard); top queries / pages from GetQueryStats /
 // GetPageStats (table only — Bing returns only the top ones, weekly).
 // Dates come as "/Date(1316156400000-0700)/": the day is read in Bing's own offset.
 
-const API = "https://ssl.bing.com/webmaster/api.svc/json";
+const API_KEY_BASE = "https://ssl.bing.com/webmaster/api.svc/json";
+// Microsoft's OAuth page calls the API on www.bing.com with a bearer token.
+const API_OAUTH_BASE = "https://www.bing.com/webmaster/api.svc/json";
+export const BING_AUTH_URL = "https://www.bing.com/webmasters/oauth/authorize";
+const BING_TOKEN_URL = "https://www.bing.com/webmasters/oauth/token";
+export const BING_SCOPE = "webmaster.read";
+/** Marks a stored secret as an OAuth refresh token (API keys are letters and digits only). */
+export const BING_OAUTH_PREFIX = "oauth:";
+
+export interface BingOAuthClient {
+  clientId: string;
+  clientSecret: string;
+  redirectUri?: string;
+}
+
+/** How a request is authorized: an API key, or an OAuth access token. */
+export type BingAuth = { key: string } | { accessToken: string };
+
+async function tokenRequest(f: FetchLike, params: Record<string, string>): Promise<{ access_token?: string; refresh_token?: string }> {
+  let res: Response;
+  try {
+    res = await f(BING_TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString(),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (err) {
+    throw new ConnectorError("timeout", `bing: ${(err as Error).name}`);
+  }
+  const body = await res.text();
+  let json: { access_token?: string; refresh_token?: string; error?: string } = {};
+  try {
+    json = body ? JSON.parse(body) : {};
+  } catch {
+    /* not JSON */
+  }
+  if (!res.ok) {
+    if (json.error === "invalid_grant" || res.status === 401) throw new ConnectorError("auth_expired", "bing: the sign-in was revoked or expired; reconnect with Bing");
+    throw new ConnectorError(res.status >= 500 ? "unavailable" : "invalid_request", `bing: token request rejected (${res.status}: ${json.error ?? ""})`);
+  }
+  return json;
+}
+
+/** Authorization code → tokens (after the user allowed access on Bing's screen). */
+export async function exchangeBingCode(f: FetchLike, client: BingOAuthClient, code: string): Promise<{ refreshToken: string | null; accessToken: string | null }> {
+  const json = await tokenRequest(f, {
+    client_id: client.clientId,
+    client_secret: client.clientSecret,
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: client.redirectUri ?? "",
+  });
+  return { refreshToken: json.refresh_token ?? null, accessToken: json.access_token ?? null };
+}
+
+export async function refreshBingToken(f: FetchLike, client: BingOAuthClient, refreshToken: string): Promise<string> {
+  const json = await tokenRequest(f, { client_id: client.clientId, client_secret: client.clientSecret, grant_type: "refresh_token", refresh_token: refreshToken });
+  if (!json.access_token) throw new ConnectorError("invalid_request", "bing: token answer without an access token");
+  return json.access_token;
+}
 
 /** "/Date(1316156400000-0700)/" → "2011-09-16" (the day in the offset Bing gives). */
 export function bingDate(value: unknown): string | null {
@@ -40,26 +102,29 @@ export function sameBingSite(a: string, b: string): boolean {
   return n(a) === n(b);
 }
 
-async function call(f: FetchLike, key: string, method: string, params: Record<string, string> = {}): Promise<Record<string, unknown>[]> {
-  const url = new URL(`${API}/${method}`);
+async function call(f: FetchLike, auth: BingAuth, method: string, params: Record<string, string> = {}): Promise<Record<string, unknown>[]> {
+  const url = new URL(`${"key" in auth ? API_KEY_BASE : API_OAUTH_BASE}/${method}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  url.searchParams.set("apikey", key);
+  const headers: Record<string, string> = { "content-type": "application/json; charset=utf-8" };
+  if ("key" in auth) url.searchParams.set("apikey", auth.key);
+  else headers.authorization = `Bearer ${auth.accessToken}`;
   let res: Response;
   try {
-    res = await f(url.toString(), { headers: { "content-type": "application/json; charset=utf-8" }, signal: AbortSignal.timeout(30_000) });
+    res = await f(url.toString(), { headers, signal: AbortSignal.timeout(30_000) });
   } catch (err) {
     throw new ConnectorError("timeout", `bing: ${(err as Error).name}`);
   }
   const body = await res.text();
   if (!res.ok) {
-    // Bing answers a wrong key with 400 {"ErrorCode":3,"Message":"ERROR!!! InvalidApiKey"}.
+    // Bing answers a wrong key with 400 {"ErrorCode":3,"Message":"ERROR!!! InvalidApiKey"},
+    // a wrong or expired access token with 400 {"ErrorCode":18,"Message":"ERROR!!! InvalidToken"}.
     let message = "";
     try {
       message = String((JSON.parse(body) as { Message?: unknown }).Message ?? "");
     } catch {
       /* not JSON */
     }
-    if (res.status === 401 || /InvalidApiKey/i.test(message)) throw new ConnectorError("auth_expired", "bing: the API key is invalid or was regenerated");
+    if (res.status === 401 || /InvalidApiKey|InvalidToken/i.test(message)) throw new ConnectorError("auth_expired", "bing: the sign-in or API key is no longer valid");
     if (res.status === 403 || /NotAuthorized|NotVerified|AccessDenied/i.test(message))
       throw new ConnectorError("permission_denied", `bing: this key may not read the site (${message.replace(/^ERROR!+\s*/, "").slice(0, 120)})`);
     throw connectorErrorFromHttp(res.status, body, "bing");
@@ -77,8 +142,8 @@ async function call(f: FetchLike, key: string, method: string, params: Record<st
 }
 
 /** Verified sites the key's Bing user can read. */
-export async function listBingSites(f: FetchLike, key: string): Promise<string[]> {
-  const sites = await call(f, key, "GetUserSites");
+export async function listBingSites(f: FetchLike, auth: BingAuth): Promise<string[]> {
+  const sites = await call(f, auth, "GetUserSites");
   return sites.filter((s) => s.IsVerified !== false && typeof s.Url === "string" && isBingSite(s.Url)).map((s) => String(s.Url));
 }
 
@@ -93,20 +158,27 @@ export class BingWebmasterConnector implements Connector {
   /** Query and page rows are refreshed weekly: re-read two weeks on every load. */
   readonly lookbackDays = 14;
 
-  constructor(private readonly cfg: { fetch?: FetchLike } = {}) {}
+  constructor(private readonly cfg: { fetch?: FetchLike; oauth?: BingOAuthClient } = {}) {}
 
   async fetchDaily(ctx: FetchContext): Promise<FetchResult> {
     if (!ctx.credentials) throw new ConnectorError("auth_expired", "bing: connection has no stored API key");
     if (!isBingSite(ctx.externalAccountId)) throw new ConnectorError("invalid_request", "bing: unexpected site id");
     const f = this.cfg.fetch ?? fetch;
-    const key = ctx.credentials.refreshToken;
+    const secret = ctx.credentials.refreshToken;
+    let key: BingAuth;
+    if (secret.startsWith(BING_OAUTH_PREFIX)) {
+      if (!this.cfg.oauth) throw new ConnectorError("not_configured", "bing: sign-in with Bing is not configured on this server");
+      key = { accessToken: await refreshBingToken(f, this.cfg.oauth, secret.slice(BING_OAUTH_PREFIX.length)) };
+    } else {
+      key = { key: secret };
+    }
     const site = ctx.externalAccountId;
     const fields = columnCatalog("bing_webmaster")!.fields(ctx.options?.columns);
     const breakdown = fields.dimensions.find((d) => d === "query" || d === "page");
     const inWindow = (d: string | null): d is string => d !== null && d >= ctx.window.from && d <= ctx.window.to;
     const records: ProviderDailyRecord[] = [];
     const notes: string[] = [];
-    let apiCalls = 0;
+    let apiCalls = "accessToken" in key ? 1 : 0;
 
     const record = (values: Record<string, string | number | null>, role: ProviderDailyRecord["role"], clicks: number | null, impressions: number | null): ProviderDailyRecord => ({
       date: String(values.date),

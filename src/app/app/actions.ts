@@ -15,7 +15,7 @@ import { loadConfig } from "@/server/config";
 import { getCompanyAccess } from "@/server/auth/authz";
 import { decryptSecret } from "@/server/crypto";
 import { withTransaction } from "@/server/db";
-import { createLiveConnection, type GoogleProvider } from "@/server/oauth/connect";
+import { createLiveConnection, type LiveProvider } from "@/server/oauth/connect";
 import { clearConnectorForReload, deleteConnection, loadConnection, setGa4Groups, updateSchedule } from "@/server/connections/manage";
 import { removeGa4Export } from "@/server/ga4export/link";
 import { localDate, addDays } from "@/lib/dates";
@@ -208,7 +208,7 @@ export async function chooseGoogleAccountsAction(form: FormData): Promise<void> 
   const cfg = loadConfig();
   const db = getPool();
   const g = (
-    await db.query<{ id: string; workspace_id: string; company_id: string; provider_id: GoogleProvider; ciphertext: string; scopes: string[]; accounts: DiscoveredAccount[] }>(
+    await db.query<{ id: string; workspace_id: string; company_id: string; provider_id: LiveProvider; ciphertext: string; scopes: string[]; accounts: DiscoveredAccount[] }>(
       `delete from public.oauth_pending_grants where id = $1 and user_id = $2 and expires_at > now() returning *`,
       [grantId, user.id],
     )
@@ -536,7 +536,7 @@ export async function connectBingAction(form: FormData): Promise<void> {
   if ((await getCompanyAccess(db, user.id, companyId)) !== "manage") back("Not found, or you do not have access.");
   let sites: string[] = [];
   try {
-    sites = await listBingSites(fetch, key);
+    sites = await listBingSites(fetch, { key });
   } catch (err) {
     const code = (err as { code?: string }).code;
     console.error(JSON.stringify({ level: "warn", msg: "bing.connect_check_failed", code, error: String((err as Error).message).slice(0, 200) }));

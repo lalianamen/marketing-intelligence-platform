@@ -1,7 +1,7 @@
 import { getCompanyContext } from "@/server/appContext";
 import { getUser } from "@/server/supabase/server";
 import { dataSpaceStatus, loadConnections, PROVIDER_LABEL } from "@/server/companyStatus";
-import { googleOAuthConfigured, loadConfig } from "@/server/config";
+import { bingOAuthConfigured, googleOAuthConfigured, loadConfig } from "@/server/config";
 import { Badge, Button, Card, LinkButton, Notice } from "@/components/ui";
 import { enableSampleConnectionAction } from "../../actions";
 
@@ -14,6 +14,7 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
   const { connections } = await loadConnections(supabase, company.id);
   const cfg = loadConfig();
   const oauthReady = googleOAuthConfigured(cfg);
+  const bingReady = bingOAuthConfigured(cfg);
   // Only what can be connected today. Sample data is offered only where live Google sign-in is not configured
   // (local development); Google Ads only once its API access for real accounts is approved (GOOGLE_ADS_ENABLED).
   // Search Console has no sample data: shown only when live Google sign-in works.
@@ -51,8 +52,14 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
         <Card title="Bing Webmaster Tools" actions={connections.some((c) => c.provider_id === "bing_webmaster" && c.mode === "live") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
           <p className="text-sm text-gray-600">Clicks and impressions of your site on Bing per day, with top search queries or pages. Adds to the dashboard&apos;s search totals.</p>
           <div className="mt-4">
-            <LinkButton href="/app/connections/bing">Connect with an API key</LinkButton>
-            <p className="mt-2 text-xs text-gray-500">You get the key in Bing Webmaster (Settings → API Access). Takes a minute.</p>
+            {bingReady ? (
+              <LinkButton href={`/api/oauth/bing/start?company=${company.id}`}>Connect with Bing</LinkButton>
+            ) : (
+              <>
+                <LinkButton href="/app/connections/bing">Connect with an API key</LinkButton>
+                <p className="mt-2 text-xs text-gray-500">You get the key in Bing Webmaster (Settings → API Access). Takes a minute.</p>
+              </>
+            )}
           </div>
         </Card>
         <Card title="Microsoft Clarity" actions={connections.some((c) => c.provider_id === "microsoft_clarity" && c.mode === "live") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>

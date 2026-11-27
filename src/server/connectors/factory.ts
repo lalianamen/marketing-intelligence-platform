@@ -21,7 +21,10 @@ export function connectorFor(
   }
   if (providerId === "bing_webmaster") {
     if (mode !== "live") throw new ConnectorError("not_configured", "no sample data for Bing Webmaster Tools");
-    return new BingWebmasterConnector({ fetch: fetchImpl });
+    return new BingWebmasterConnector({
+      fetch: fetchImpl,
+      oauth: cfg.bing.clientId && cfg.bing.clientSecret ? { clientId: cfg.bing.clientId, clientSecret: cfg.bing.clientSecret } : undefined,
+    });
   }
   if (providerId === "microsoft_clarity") {
     if (mode !== "live") throw new ConnectorError("not_configured", "no sample data for Clarity");

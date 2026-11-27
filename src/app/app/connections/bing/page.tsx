@@ -1,13 +1,36 @@
 import { getCompanyContext } from "@/server/appContext";
-import { Button, Card, EmptyState, Notice } from "@/components/ui";
+import { bingOAuthConfigured, loadConfig } from "@/server/config";
+import { Button, Card, EmptyState, LinkButton, Notice } from "@/components/ui";
 import { connectBingAction } from "../../actions";
 
-// Bing Webmaster Tools: the user pastes their Bing Webmaster API key. It is sent
-// only to this server, stored encrypted, and never shown again.
-export default async function BingConnectPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+// Bing Webmaster Tools. Normally one button: "Connect with Bing" (Bing's own
+// sign-in screen, nothing to copy). The API-key form is the fallback when the
+// platform's Bing sign-in is not configured, or when the user asks for it.
+export default async function BingConnectPage({ searchParams }: { searchParams: Promise<{ error?: string; key?: string }> }) {
   const sp = await searchParams;
   const ctx = await getCompanyContext();
   if (!ctx.company) return <EmptyState title="Add a company first">Add a company first.</EmptyState>;
+  if (bingOAuthConfigured(loadConfig()) && sp.key !== "1") {
+    return (
+      <div className="max-w-xl space-y-4">
+        <a href="/app/connections/new" className="text-sm text-brand-700 hover:underline">← Add a connector</a>
+        <h1 className="text-2xl font-semibold">Connect Bing</h1>
+        {sp.error && <Notice tone="red">{sp.error}</Notice>}
+        <Card>
+          <p className="text-sm text-gray-700">Press the button and allow access on Bing&apos;s page. That&apos;s all.</p>
+          <div className="mt-4">
+            <LinkButton href={`/api/oauth/bing/start?company=${ctx.company.id}`}>Connect with Bing</LinkButton>
+          </div>
+          <p className="mt-4 text-xs text-gray-500">
+            Your site must already be in{" "}
+            <a className="underline" href="https://www.bing.com/webmasters" target="_blank" rel="noopener noreferrer">Bing Webmaster Tools</a>{" "}
+            (the quickest way to add it: Import from Google Search Console). The platform can only read statistics.
+          </p>
+        </Card>
+        <a href="/app/connections/bing?key=1" className="block text-xs text-gray-500 underline">Connect with an API key instead</a>
+      </div>
+    );
+  }
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
