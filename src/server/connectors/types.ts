@@ -71,7 +71,7 @@ export interface FetchResult {
 }
 
 export interface Connector {
-  readonly providerId: "ga4" | "google_ads" | "google_search_console" | "microsoft_clarity" | "stripe" | "bing_webmaster" | "meta_ads";
+  readonly providerId: "ga4" | "google_ads" | "google_search_console" | "microsoft_clarity" | "stripe" | "bing_webmaster" | "meta_ads" | "app_database";
   readonly origin: Origin;
   readonly mode: "live" | "simulated";
   readonly requiredScopes: readonly string[];

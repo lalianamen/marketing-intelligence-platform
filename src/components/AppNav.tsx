@@ -6,6 +6,7 @@ const COMPANY_ITEMS = [
   { href: "/app", label: "Dashboard" },
   { href: "/app/connections", label: "Data Connections" },
   { href: "/app/analytics", label: "Analytics" },
+  { href: "/app/funnel", label: "Funnel" },
   { href: "/app/settings", label: "Settings" },
 ];
 

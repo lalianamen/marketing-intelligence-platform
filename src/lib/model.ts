@@ -2,7 +2,7 @@
 // engine and the UI. Client-safe (types and pure helpers only).
 
 /** Where a row came from: a connector, or a manual CSV upload. */
-export type Origin = "csv" | "ga4" | "google_ads" | "google_search_console" | "microsoft_clarity" | "stripe" | "bing_webmaster" | "meta_ads";
+export type Origin = "csv" | "ga4" | "google_ads" | "google_search_console" | "microsoft_clarity" | "stripe" | "bing_webmaster" | "meta_ads" | "app_database";
 
 /**
  * What a "conversion" means for a row. These are NOT interchangeable and are
@@ -113,6 +113,7 @@ export const ORIGIN_LABEL: Record<Origin, string> = {
   stripe: "Stripe",
   bing_webmaster: "Bing Webmaster Tools",
   meta_ads: "Meta Ads",
+  app_database: "App database",
 };
 
 export const CONVERSION_TYPE_LABEL: Record<ConversionType, string> = {

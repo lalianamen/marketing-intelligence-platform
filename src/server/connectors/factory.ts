@@ -6,6 +6,7 @@ import { ClarityConnector } from "./clarity";
 import { StripeConnector } from "./stripe";
 import { BingWebmasterConnector } from "./bing";
 import { MetaAdsConnector } from "./meta";
+import { AppDatabaseConnector } from "./appDatabase";
 import { SimulatedConnector } from "./simulated";
 import { type Connector, ConnectorError } from "./types";
 import type { FetchLike } from "./google";
@@ -19,6 +20,10 @@ export function connectorFor(
   if (providerId === "stripe") {
     if (mode !== "live") throw new ConnectorError("not_configured", "no sample data for Stripe");
     return new StripeConnector({ fetch: fetchImpl });
+  }
+  if (providerId === "app_database") {
+    if (mode !== "live") throw new ConnectorError("not_configured", "no sample data for the app database");
+    return new AppDatabaseConnector();
   }
   if (providerId === "meta_ads") {
     if (mode !== "live") throw new ConnectorError("not_configured", "no sample data for Meta Ads");

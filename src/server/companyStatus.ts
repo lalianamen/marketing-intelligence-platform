@@ -93,6 +93,7 @@ export const PROVIDER_LABEL: Record<string, string> = {
   stripe: "Stripe",
   bing_webmaster: "Bing Webmaster Tools",
   meta_ads: "Meta Ads",
+  app_database: "App database",
 };
 
 export function modeBadge(mode: string): { tone: "green" | "amber" | "blue"; text: string } {

@@ -135,6 +135,23 @@ try {
   assert.equal(await page.locator('[data-testid="bing-form"]').evaluate((f) => f.checkValidity()), true);
   await page.goto(`${BASE}/app/connections/new`);
   step("Bing Webmaster Tools: connect page takes an API key (hidden) and an optional site");
+  await page.click('a:has-text("Connect (3 steps)")');
+  await page.waitForURL(/\/app\/connections\/app-database$/);
+  await page.fill('[data-testid="appdb-form"] textarea', "postgresql://postgres:x@10.0.0.5:5432/postgres");
+  await page.click('[data-testid="appdb-form"] button:has-text("Next")');
+  await page.waitForURL(/error=/);
+  assert.ok(await page.getByText("pooler.supabase.com").first().isVisible(), "only Supabase pooler addresses are accepted");
+  await page.fill('[data-testid="appdb-form"] textarea', "postgresql://postgres.abcdefghijklmnopqrst:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres");
+  await page.click('[data-testid="appdb-form"] button:has-text("Next")');
+  await page.waitForURL(/connection=/);
+  const script = await page.locator('[data-testid="appdb-script"]').inputValue();
+  assert.match(script, /create role mi_reader login password '[A-Za-z0-9_-]{20,}'/);
+  assert.match(script, /default_transaction_read_only = on/);
+  await page.screenshot({ path: `${OUT}/14-app-database-script.png`, fullPage: true });
+  await page.goto(`${BASE}/app/funnel`);
+  assert.ok(await page.getByText("See every step from first visit to payment").isVisible(), "the Funnel explains what to connect while the check has not passed");
+  await page.goto(`${BASE}/app/connections/new`);
+  step("app database: pooler address only, then a read-only script to run; Funnel waits for the check");
 
   await page.goto(`${BASE}/app/connections/csv`);
   await page.setInputFiles('input[name="file"]', "public/sample-marketing-data.csv");

@@ -630,3 +630,98 @@ export async function removeMemberAction(form: FormData): Promise<void> {
   if (/^[0-9a-f-]{36}$/i.test(userId)) await removeMember(getPool(), user.id, workspaceId, userId);
   usersBack("users_saved=1");
 }
+
+// ---------------------------------------------------------------------------
+// Your app's database (Supabase): read-only access to the schema marketing_intel.
+// ---------------------------------------------------------------------------
+
+export async function startAppDbAction(form: FormData): Promise<void> {
+  const { user } = await requireUser();
+  const companyId = String(form.get("company_id") ?? "");
+  const back = (msg: string) => redirect("/app/connections/app-database?error=" + encodeURIComponent(msg));
+  const { encodeSecret, newReaderPassword, parseSupabaseConnection } = await import("@/server/connectors/appDatabase");
+  const target = parseSupabaseConnection(String(form.get("connection_string") ?? "").slice(0, 600));
+  if (typeof target === "string") back(target);
+  const db = getPool();
+  const cfg = loadConfig();
+  if (!cfg.tokenEncryptionKey) back("Connections are not configured on this server yet.");
+  if ((await getCompanyAccess(db, user.id, companyId)) !== "manage") back("Not found, or you do not have access.");
+  const t = target as Exclude<typeof target, string>;
+  const ws = (await db.query<{ workspace_id: string }>(`select workspace_id from public.companies where id = $1`, [companyId])).rows[0]!.workspace_id;
+  const id = await withTransaction(async (c) => {
+    const connId = await createLiveConnection(c, {
+      workspaceId: ws,
+      companyId,
+      userId: user.id,
+      provider: "app_database",
+      account: { id: t.projectRef, name: `Supabase project ${t.projectRef}`, group: null },
+      refreshToken: encodeSecret({ target: t, password: newReaderPassword() }),
+      scopes: [],
+      encryptionKey: cfg.tokenEncryptionKey!,
+      localTime: "01:15",
+    });
+    // Not usable until the customer runs the script and the check passes.
+    await c.query(`update public.company_connections set status = 'pending_authorization' where id = $1`, [connId]);
+    return connId;
+  });
+  revalidatePath("/app", "layout");
+  redirect(`/app/connections/app-database?connection=${id}`);
+}
+
+export async function checkAppDbAction(form: FormData): Promise<void> {
+  const { user } = await requireUser();
+  const id = String(form.get("connection_id") ?? "");
+  const back = (msg: string) => redirect(`/app/connections/app-database?connection=${id}&error=` + encodeURIComponent(msg));
+  const db = getPool();
+  const cfg = loadConfig();
+  const c = await loadConnection(db, user.id, id);
+  if (!c || c.access !== "manage" || c.provider_id !== "app_database") redirect("/app/connections?error=" + encodeURIComponent("Not found, or you do not have access."));
+  const row = (await db.query<{ ciphertext: string }>(`select ciphertext from public.connection_secrets where connection_id = $1`, [id])).rows[0];
+  if (!row || !cfg.tokenEncryptionKey) back("Connect again from the start.");
+  const { checkAppDb, decodeSecret } = await import("@/server/connectors/appDatabase");
+  const { suggestStages } = await import("@/lib/funnel");
+  let found: { events: string[]; people: number };
+  try {
+    found = await checkAppDb(decodeSecret(decryptSecret(row!.ciphertext, cfg.tokenEncryptionKey!, id)));
+  } catch (err) {
+    const e = err as { code?: string; message?: string };
+    console.error(JSON.stringify({ level: "warn", msg: "app_db.check_failed", code: e.code, error: String(e.message ?? "").slice(0, 200) }));
+    back(
+      e.code === "auth_expired"
+        ? "The database did not accept the platform's login yet. Run the script in Supabase → SQL Editor (all of it), then check again."
+        : e.code === "permission_denied"
+        ? "The login works but cannot read marketing_intel. Run the script again (it grants the access)."
+        : e.code === "invalid_request" && /missing/.test(String(e.message))
+        ? `Your database has no complete marketing_intel views yet (${String(e.message).replace(/^app database: /, "")}). See the guide on this page.`
+        : e.code === "unavailable"
+        ? "Could not reach the database. Check that you copied the Session pooler string of the right project."
+        : "The check failed. Please try again in a minute.",
+    );
+  }
+  const settings = (c!.settings as Record<string, unknown> | null) ?? {};
+  await db.query(
+    `update public.company_connections set status = 'connected', last_error = null,
+            settings = settings || $2::jsonb, updated_at = now() where id = $1`,
+    [id, JSON.stringify({ funnel_stages: settings.funnel_stages ?? suggestStages(found!.events) })],
+  );
+  revalidatePath("/app", "layout");
+  redirect(`/app/funnel?connected=1`);
+}
+
+export async function saveFunnelStagesAction(form: FormData): Promise<void> {
+  const { user } = await requireUser();
+  const id = String(form.get("connection_id") ?? "");
+  const c = await loadConnection(getPool(), user.id, id);
+  if (!c || c.access !== "manage" || c.provider_id !== "app_database") redirect("/app/funnel?error=" + encodeURIComponent("Only editors can change the stages."));
+  const { MAX_STAGES, sanitizeStages } = await import("@/lib/funnel");
+  const raw = Array.from({ length: MAX_STAGES }, (_, i) => ({
+    label: String(form.get(`label_${i}`) ?? ""),
+    events: String(form.get(`events_${i}`) ?? "").split(/[\s,]+/).filter(Boolean),
+  })).filter((s) => s.label.trim() && s.events.length);
+  if (raw.length < 2) redirect("/app/funnel?error=" + encodeURIComponent("A funnel needs at least two stages, each with a name and an event.") + "#stages");
+  await getPool().query(`update public.company_connections set settings = settings || $2::jsonb, updated_at = now() where id = $1`, [
+    id,
+    JSON.stringify({ funnel_stages: sanitizeStages(raw) }),
+  ]);
+  redirect("/app/funnel?saved=1");
+}

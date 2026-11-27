@@ -13,6 +13,7 @@ Last updated: 2026-11-27. Status meanings: **Working** = connected to a real acc
 | Stripe | **Working** (live) | live |
 | Bing Webmaster Tools | Implemented, **not verified live** ("Connect with Bing" sign-in or API key; mocked tests; Bing's error answers checked against the real API) | live |
 | Google Ads | Implemented, **not verified live** (no Google Ads account yet); simulated mode working | live, simulated |
+| Your app's database (Supabase) + Funnel | Implemented, **not verified live** (integration-tested against a local database with the generated read-only login) | live |
 | Meta Ads | Implemented, **not verified live** ("Connect with Facebook"; mocked tests) | live |
 | Microsoft Advertising, Semrush, TikTok, Shopify, WordPress, CRM, call tracking | Planned (catalog entry only); use CSV meanwhile | — |
 | Yelp Ads | `requires_partner_access`; not available, no scraping | — |
@@ -256,6 +257,31 @@ Google user can read and connects it:
   `META_APP_ID` / `META_APP_SECRET` in the server env. Until the app has **Advanced (Full) access to `ads_read`** (App
   Review + Business Verification), only people with a role in the app (admins, developers, testers) can connect.
   Graph API version: `META_API_VERSION` (default `v27.0`).
+
+## Your app's database (Supabase) and the Funnel (implemented, not verified live)
+
+- Idea: the customer's own database gets one schema, `marketing_intel`, with views in a fixed shape (no names or
+  emails); the platform gets a login (`mi_reader`) that can only read that schema. Data stays in the customer's
+  database; the platform stores **no person-level rows**.
+- Connect (3 steps, `/app/connections/app-database`): 1) paste Supabase → Connect → **Session pooler** string (no
+  password; only `*.pooler.supabase.com` hosts are accepted, so no requests into private networks); 2) the platform
+  generates a password (stored encrypted, AAD = connection id) and shows a script to run in Supabase → SQL Editor:
+  `create role mi_reader login …`, `default_transaction_read_only = on`, `statement_timeout = 20s`, `connection limit 3`,
+  usage/select on `marketing_intel` only; 3) "Check connection" verifies the login and the views, lists the event
+  names and proposes funnel steps. To cut access: `drop role mi_reader;` or drop the schema.
+- View contract: `events(id, at, device_id, person_id, event, src, ref_host, amount, currency, livemode)`,
+  `page_views(id, at, device_id, person_id, path, ref_host)`, `identities(device_id, person_id)`,
+  `people(person_id, signed_up_at, is_tester)`. Amounts in normal units.
+- Connection: user `mi_reader.<project ref>` at the pooler, TLS without certificate verification (Supabase's pooler
+  chain; same as the app's own database URL), every query inside `begin read only`.
+- **Funnel** (`/app/funnel`): computed live in the customer's database on each view (~0.3 s for LICENA's ~22k rows):
+  people (devices merged through `identities`) whose first touch is in the period, testers excluded by default; first
+  source = first touch with a referring site or own label (`src`), own site and Stripe pages ignored; channel from
+  `channelOf()` (Search, AI assistants, Email, Social, Referral, Direct / unknown); a step counts only if earlier steps
+  were reached; revenue = live `purchase` amounts. People are listed by an anonymous label (SHA-256 of the id, 8 hex).
+  Steps are editable (Funnel → Change the steps, editors only), stored in `company_connections.settings.funnel_stages`.
+- Daily sync (after setup): per day and event counts in the connector table; dashboard gets sign-ups as leads and
+  purchases as conversions (money stays with Stripe so it is never counted twice).
 
 ## Future connectors: design notes, no access promised
 

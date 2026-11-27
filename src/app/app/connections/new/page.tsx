@@ -59,6 +59,13 @@ export default async function AddConnectorPage({ searchParams }: { searchParams:
             </div>
           </Card>
         )}
+        <Card title="Your app's database (Supabase)" actions={live("app_database") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
+          <p className="text-sm text-gray-600">Sign-ups, trials and payments from your own app. Powers the Funnel: where people came from and who paid.</p>
+          <div className="mt-4">
+            <LinkButton href="/app/connections/app-database">Connect (3 steps)</LinkButton>
+            <p className="mt-2 text-xs text-gray-500">For apps built on Supabase. Read-only access to one folder of your database.</p>
+          </div>
+        </Card>
         <Card title="Bing Webmaster Tools" actions={connections.some((c) => c.provider_id === "bing_webmaster" && c.mode === "live") ? <Badge tone="green">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}>
           <p className="text-sm text-gray-600">Clicks and impressions of your site on Bing per day, with top search queries or pages. Adds to the dashboard&apos;s search totals.</p>
           <div className="mt-4">
