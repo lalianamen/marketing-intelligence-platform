@@ -2,10 +2,12 @@ import { getAppContext } from "@/server/appContext";
 import { getUser } from "@/server/supabase/server";
 import { googleOAuthConfigured, loadConfig } from "@/server/config";
 import { Badge, Button, Card, Field, Notice } from "@/components/ui";
-import { renameWorkspaceAction, setThemeAction } from "../actions";
+import { inviteUserAction, removeMemberAction, renameWorkspaceAction, revokeInvitationAction, setMemberAccessAction, setThemeAction } from "../actions";
+import { getPool } from "@/server/db";
+import { loadTeam, ROLE_LABEL } from "@/server/team/team";
 import { cookies } from "next/headers";
 
-export default async function AccountPage({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string }> }) {
+export default async function AccountPage({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string; invited?: string; users_error?: string; users_saved?: string }> }) {
   const sp = await searchParams;
   const ctx = await getAppContext();
   const { supabase } = await getUser();
@@ -28,6 +30,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   }
   const name = (id: string) => ctx.companies.find((c) => c.id === id)?.name ?? id;
   const theme = (await cookies()).get("theme")?.value ?? "light";
+  const team = isAdmin ? await loadTeam(getPool(), ctx.userId, ctx.workspace.id) : null;
+  const ownCompanies = ctx.companies.filter((c) => c.workspace_id === ctx.workspace.id);
 
   return (
     <div className="space-y-6">
@@ -52,7 +56,6 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
               <Button variant="secondary">Save</Button>
             </form>
           ) : <p className="text-sm">{ctx.workspace.name}</p>}
-          <p className="mt-3 text-xs text-gray-500">Inviting team members and client viewers is planned for a later phase.</p>
         </Card>
         <Card title="Appearance">
           <form action={setThemeAction} id="appearance" className="space-y-3 text-sm" data-testid="appearance">
@@ -70,6 +73,107 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         </Card>
       </div>
 
+
+      {team && (
+        <section id="users" className="space-y-4 rounded-xl border border-gray-200 bg-white p-5" data-testid="users">
+          <div>
+            <h2 className="text-base font-semibold">Users</h2>
+            <p className="text-sm text-gray-600">Give other people access to the companies you choose. They see nothing else.</p>
+          </div>
+          {sp.users_error && <Notice tone="red">{sp.users_error}</Notice>}
+          {sp.users_saved && <Notice tone="green">Saved.</Notice>}
+          {sp.invited && (
+            <Notice tone="green">
+              Done. Tell <strong>{sp.invited}</strong> to open <strong>{cfg.appUrl}/signup</strong> (or log in, if they already have an account) with this email.
+              The chosen companies appear in their list right away.
+            </Notice>
+          )}
+
+          {ownCompanies.length === 0 ? (
+            <p className="text-sm text-gray-600">Add a company first.</p>
+          ) : (
+            <form action={inviteUserAction} className="space-y-4 rounded-lg border border-gray-200 p-4 text-sm" data-testid="invite-form">
+              <h3 className="font-semibold">Add a person</h3>
+              <Field label="Their email" name="email" type="email" required />
+              <fieldset className="space-y-2">
+                <legend className="mb-1 font-medium text-gray-800">What can they do?</legend>
+                <label className="flex cursor-pointer items-start gap-2">
+                  <input type="radio" name="role" value="company_viewer" defaultChecked className="mt-1" />
+                  <span><strong>Viewer</strong> — sees the dashboard and data, cannot change anything.</span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2">
+                  <input type="radio" name="role" value="company_admin" className="mt-1" />
+                  <span><strong>Editor</strong> — also connects sources, uploads files and changes company settings. Cannot delete companies or add people.</span>
+                </label>
+              </fieldset>
+              <fieldset className="space-y-1.5">
+                <legend className="mb-1 font-medium text-gray-800">Which companies?</legend>
+                {ownCompanies.map((c) => (
+                  <label key={c.id} className="flex cursor-pointer items-center gap-2">
+                    <input type="checkbox" name="company" value={c.id} defaultChecked={ownCompanies.length === 1 || c.id === ctx.company?.id} />
+                    {c.name}
+                  </label>
+                ))}
+              </fieldset>
+              <Button>Give access</Button>
+            </form>
+          )}
+
+          {team.members.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">People with access</h3>
+              {team.members.map((m) => (
+                <div key={m.userId} className="rounded-lg border border-gray-200 p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-gray-900">{m.email}</span>
+                    <form action={removeMemberAction}>
+                      <input type="hidden" name="user_id" value={m.userId} />
+                      <button className="text-xs text-red-700 hover:underline">Remove from all companies</button>
+                    </form>
+                  </div>
+                  <ul className="mt-2 divide-y divide-gray-100">
+                    {m.companies.map((c) => (
+                      <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                        <span>{c.name}</span>
+                        <form action={setMemberAccessAction} className="flex items-center gap-2">
+                          <input type="hidden" name="user_id" value={m.userId} />
+                          <input type="hidden" name="company_id" value={c.id} />
+                          <select name="role" defaultValue={c.role} className="rounded-lg border border-gray-300 px-2 py-1 text-xs" aria-label={`Role in ${c.name}`}>
+                            <option value="company_viewer">Viewer</option>
+                            <option value="company_admin">Editor</option>
+                            <option value="remove">No access</option>
+                          </select>
+                          <button className="rounded-lg border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50">Save</button>
+                        </form>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {team.invitations.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold">Waiting to sign up</h3>
+              <ul className="divide-y divide-gray-100 text-sm">
+                {team.invitations.map((i) => (
+                  <li key={i.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <span>
+                      <span className="font-medium">{i.email}</span> · {ROLE_LABEL[i.role]} · {i.companies.map((c) => c.name).join(", ")}
+                      <span className="block text-xs text-gray-500">Valid until {i.expiresAt}. Access starts when they sign up with this email.</span>
+                    </span>
+                    <form action={revokeInvitationAction}>
+                      <input type="hidden" name="invitation_id" value={i.id} />
+                      <button className="text-xs text-red-700 hover:underline">Cancel</button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       <details className="rounded-xl border border-gray-200 bg-white p-5" data-testid="advanced">
         <summary className="cursor-pointer text-base font-semibold">Advanced (administrator / developer)</summary>

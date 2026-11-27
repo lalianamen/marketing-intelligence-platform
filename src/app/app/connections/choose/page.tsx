@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCompanyContext } from "@/server/appContext";
+import { getManageContext } from "@/server/appContext";
 import { getPool } from "@/server/db";
 import type { DiscoveredAccount } from "@/server/connectors/google";
 import { Card, Notice } from "@/components/ui";
@@ -11,7 +11,7 @@ import { chooseGoogleAccountsAction } from "../../actions";
 // pool, scoped to the signed-in user; the token itself never reaches the page.
 export default async function ChooseAccountsPage({ searchParams }: { searchParams: Promise<{ grant?: string; error?: string }> }) {
   const sp = await searchParams;
-  const ctx = await getCompanyContext();
+  const ctx = await getManageContext();
   const grantId = sp.grant ?? "";
   const row = /^[0-9a-f-]{36}$/i.test(grantId)
     ? (

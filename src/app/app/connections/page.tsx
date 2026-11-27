@@ -13,6 +13,7 @@ import { syncNowAction } from "../actions";
 export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<{ error?: string; imported?: string; sample?: string; queued?: string; oauth?: string; connected?: string; deleted?: string }> }) {
   const sp = await searchParams;
   const ctx = await getCompanyContext();
+  const canManage = ctx.access === "manage";
   const { supabase } = await getUser();
   const company = ctx.company;
   const space = (await dataSpaceStatus(supabase, [company.id]))[company.id]!;
@@ -29,7 +30,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
           <h1 className="text-2xl font-semibold">Data Connections</h1>
           <p className="text-sm text-gray-600">Connected sources update automatically every night ({company.timezone}).</p>
         </div>
-        <LinkButton href="/app/connections/new">+ Add connector</LinkButton>
+        {canManage ? <LinkButton href="/app/connections/new">+ Add connector</LinkButton> : <span className="text-xs text-gray-500">View-only access</span>}
       </div>
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.oauth && <Notice tone="amber">{sp.oauth}</Notice>}
@@ -44,7 +45,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
       {connections.length === 0 ? (
         <EmptyState title="No connectors yet">
           Connect a source or upload a CSV to start collecting this company&apos;s data.
-          <div className="mt-4"><LinkButton href="/app/connections/new">+ Add connector</LinkButton></div>
+          {canManage && <div className="mt-4"><LinkButton href="/app/connections/new">+ Add connector</LinkButton></div>}
         </EmptyState>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -80,9 +81,9 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
               </li>
             );
           })}
-          <li>
+          {canManage && <li>
             <a href="/app/connections/new" className="flex h-full min-h-40 items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white p-4 text-sm font-medium text-brand-700 hover:border-brand-300 hover:bg-brand-50">+ Add connector</a>
-          </li>
+          </li>}
         </ul>
       )}
 

@@ -92,11 +92,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {conns.connections.map((c) => <ConnectorCard key={c.id} c={c} lastRun={lastRunByConn.get(c.id)} position={positions.get(lastRunByConn.get(c.id)?.id ?? "")} tz={company.timezone} />)}
-          <li>
+          {ctx.access === "manage" && <li>
             <a href="/app/connections" className="flex h-full min-h-32 items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white p-4 text-sm font-medium text-brand-700 hover:border-brand-300 hover:bg-brand-50">
               + Connect a source or upload CSV
             </a>
-          </li>
+          </li>}
         </ul>
         {conns.runs.some((r) => r.status === "failed" || r.status === "dead") && (
           <p className="mt-2 text-sm text-red-700">An update failed. <a className="underline" href="/app/connections">See details</a>.</p>

@@ -574,3 +574,59 @@ export async function connectBingAction(form: FormData): Promise<void> {
   revalidatePath("/app", "layout");
   redirect(`/app/connections/${id}?setup=1`);
 }
+
+// ---------------------------------------------------------------------------
+// Users (Account settings → Users): owner/admin invite people to chosen companies.
+// ---------------------------------------------------------------------------
+
+async function teamContext() {
+  const { user } = await requireUser();
+  const { getAppContext } = await import("@/server/appContext");
+  const ctx = await getAppContext();
+  if (!["owner", "admin"].includes(ctx.workspace.role)) redirect("/app/account?error=" + encodeURIComponent("Only the workspace owner can manage users.") + "#users");
+  return { user, workspaceId: ctx.workspace.id };
+}
+const usersBack = (q: string): never => redirect(`/app/account?${q}#users`);
+
+export async function inviteUserAction(form: FormData): Promise<void> {
+  const { user, workspaceId } = await teamContext();
+  const { inviteUser, isMemberRole, normalizeEmail } = await import("@/server/team/team");
+  const email = normalizeEmail(String(form.get("email") ?? ""));
+  const role = String(form.get("role") ?? "");
+  const companyIds = form.getAll("company").map(String).filter((s) => /^[0-9a-f-]{36}$/i.test(s));
+  if (!email) usersBack("users_error=" + encodeURIComponent("Please enter a valid email address."));
+  if (!isMemberRole(role)) usersBack("users_error=" + encodeURIComponent("Choose Viewer or Editor."));
+  const rl = await getPool().query<{ ok: boolean }>("select private.rate_limit_hit($1, 30, 3600) as ok", [`invite:${user.id}`]);
+  if (!rl.rows[0]?.ok) usersBack("users_error=" + encodeURIComponent("Too many invitations in an hour. Please try again later."));
+  const problem = await inviteUser(getPool(), user.id, { workspaceId, email: email!, role: role as "company_viewer", companyIds });
+  if (problem) usersBack("users_error=" + encodeURIComponent(problem));
+  revalidatePath("/app/account");
+  usersBack("invited=" + encodeURIComponent(email!));
+}
+
+export async function revokeInvitationAction(form: FormData): Promise<void> {
+  const { user, workspaceId } = await teamContext();
+  const { revokeInvitation } = await import("@/server/team/team");
+  const id = String(form.get("invitation_id") ?? "");
+  if (/^[0-9a-f-]{36}$/i.test(id)) await revokeInvitation(getPool(), user.id, workspaceId, id);
+  usersBack("users_saved=1");
+}
+
+export async function setMemberAccessAction(form: FormData): Promise<void> {
+  const { user, workspaceId } = await teamContext();
+  const { isMemberRole, setMemberAccess } = await import("@/server/team/team");
+  const userId = String(form.get("user_id") ?? "");
+  const companyId = String(form.get("company_id") ?? "");
+  const role = String(form.get("role") ?? "");
+  if (!/^[0-9a-f-]{36}$/i.test(userId) || !/^[0-9a-f-]{36}$/i.test(companyId)) usersBack("users_error=" + encodeURIComponent("Not found."));
+  await setMemberAccess(getPool(), user.id, { workspaceId, userId, companyId, role: role === "remove" ? null : isMemberRole(role) ? role : null });
+  usersBack("users_saved=1");
+}
+
+export async function removeMemberAction(form: FormData): Promise<void> {
+  const { user, workspaceId } = await teamContext();
+  const { removeMember } = await import("@/server/team/team");
+  const userId = String(form.get("user_id") ?? "");
+  if (/^[0-9a-f-]{36}$/i.test(userId)) await removeMember(getPool(), user.id, workspaceId, userId);
+  usersBack("users_saved=1");
+}

@@ -1,4 +1,4 @@
-import { getCompanyContext } from "@/server/appContext";
+import { getManageContext } from "@/server/appContext";
 import { Button, Card, EmptyState, Notice } from "@/components/ui";
 import { connectStripeAction } from "../../actions";
 
@@ -6,7 +6,7 @@ import { connectStripeAction } from "../../actions";
 // transactions. Full secret keys are refused. Stored encrypted, never shown again.
 export default async function StripeConnectPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const sp = await searchParams;
-  const ctx = await getCompanyContext();
+  const ctx = await getManageContext();
   if (!ctx.company) return <EmptyState title="Add a company first">Add a company first.</EmptyState>;
   return (
     <div className="grid gap-6 lg:grid-cols-3">

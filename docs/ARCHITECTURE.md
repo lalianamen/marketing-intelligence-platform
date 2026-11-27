@@ -76,5 +76,11 @@ usage events. A run that is incomplete (pagination limit) fails and is retried; 
 - New connector: implement `Connector` in `src/server/connectors`, add a `connector_providers` row; the sync engine, scheduling and UI status already work.
 - Future AI / external tools: must call an authorized, scoped API on top of `getDashboardData`-style services (company-scoped, bounded), never raw warehouse SQL.
 - Billing/Stripe: `workspaces.plan`, `max_companies` and `usage_events` are the hooks for limits and metering.
-- Team members/client viewers: `workspace_members` roles and `company_members` (`company_admin`, `company_viewer`) already exist and are covered by RLS tests; the invitation UI is not built.
+- Team members/client viewers: `workspace_members` roles and `company_members` (`company_admin`, `company_viewer`) are covered by RLS tests. **Users** (Account settings → Users, owner/admin only): invite an email as
+  Viewer (`company_viewer`, read only) or Editor (`company_admin`: connect sources, upload, company settings; no delete, no
+  inviting) for ticked companies. Invitations live in `company_invitations` (RLS on, no policies: server only); the
+  invited person signs up or logs in with that email and `accept_my_invitations()` (SECURITY DEFINER, verified email
+  only) adds the `company_members` rows on the next app visit. An address that already has a verified account gets
+  access at once. Server checks: `src/server/team/team.ts` (`requireWorkspaceRole` owner/admin), pages for changes use
+  `getManageContext()` (viewers are sent back).
 - Cloud Tasks/Cloud Run: replace `claimJob` polling with push delivery calling the same domain functions.

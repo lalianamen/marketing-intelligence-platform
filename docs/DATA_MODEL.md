@@ -13,7 +13,8 @@ All tenant-owned tables carry `workspace_id` + `company_id` with a composite FK 
 | `workspaces` | business or agency; `plan`, `max_companies` | members read; owner/admin rename |
 | `workspace_members` | `owner` / `admin` / `member` | members read; **no direct writes** |
 | `companies` | company; timezone; status | read: member/company member; update of name/website/industry/country/timezone only |
-| `company_members` | future client viewers: `company_admin` / `company_viewer` | read |
+| `company_members` | people with access to chosen companies: `company_admin` (Editor) / `company_viewer` (Viewer) | read |
+| `company_invitations` | open invitations by email (role, companies, expiry, accepted/revoked) | none (server only) |
 | `company_settings` | nightly sync time, reporting currency | read; limited update |
 | `cloud_projects` | registered projects, capacity (`max_datasets`, `dataset_count`) | **no access** (server only) |
 | `analytics_resources` | company → provider/project/dataset/location/status/schema_version/is_simulated | read |

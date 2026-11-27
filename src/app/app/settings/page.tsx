@@ -7,7 +7,9 @@ import { BUSINESS_PROFILES, BUSINESS_TYPES } from "@/lib/businessTypes";
 export default async function CompanySettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string; cleared?: string }> }) {
   const sp = await searchParams;
   const ctx = await getCompanyContext();
-  const isAdmin = ["owner", "admin"].includes(ctx.workspace.role);
+  // Deleting or clearing a company: owner/admin of the company's own workspace only (not invited editors).
+  const isAdmin = ctx.company.workspace_id === ctx.workspace.id && ["owner", "admin"].includes(ctx.workspace.role);
+  const canEdit = ctx.access === "manage";
   return (
     <div className="max-w-2xl space-y-6">
       <h1 className="text-2xl font-semibold">Company settings</h1>
@@ -15,6 +17,9 @@ export default async function CompanySettingsPage({ searchParams }: { searchPara
       {sp.error && <Notice tone="red">{sp.error}</Notice>}
       {sp.cleared && <Notice tone="green">All data of this company was cleared. You can connect sources and upload files again.</Notice>}
       <Card title="Company details">
+          {!canEdit ? (
+            <p className="text-sm text-gray-700">{ctx.company.name} · You have view-only access to this company.</p>
+          ) : (
           <form action={updateCompanyAction} className="space-y-3">
             <input type="hidden" name="company_id" value={ctx.company.id} />
             <Field label="Company name" name="name" required defaultValue={ctx.company.name} />
@@ -28,6 +33,7 @@ export default async function CompanySettingsPage({ searchParams }: { searchPara
             <p className="text-xs text-gray-500">Time zone: {ctx.company.timezone}. Nightly updates run at 06:00 local time plus a short buffer per source.</p>
             <Button variant="secondary">Save</Button>
           </form>
+          )}
         </Card>
 
       {isAdmin && (

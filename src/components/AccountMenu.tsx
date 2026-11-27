@@ -33,6 +33,7 @@ export function AccountMenu({ email, workspace }: { email: string; workspace: st
           <p className="truncate text-xs text-gray-500">Workspace: {workspace}</p>
         </div>
         <a href="/app/account" className="mt-1 block rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">Account settings</a>
+        <a href="/app/account#users" className="block rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">Users and access</a>
         <a href="/app/companies" className="block rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">All companies</a>
         <form action="/auth/signout" method="post">
           <button className="block w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100">Log out</button>

@@ -1,4 +1,4 @@
-import { getCompanyContext } from "@/server/appContext";
+import { getManageContext } from "@/server/appContext";
 import { getUser } from "@/server/supabase/server";
 import { dataSpaceStatus, loadConnections, PROVIDER_LABEL } from "@/server/companyStatus";
 import { bingOAuthConfigured, googleOAuthConfigured, loadConfig, metaOAuthConfigured } from "@/server/config";
@@ -7,7 +7,7 @@ import { enableSampleConnectionAction } from "../../actions";
 
 export default async function AddConnectorPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const sp = await searchParams;
-  const ctx = await getCompanyContext();
+  const ctx = await getManageContext();
   const { supabase } = await getUser();
   const company = ctx.company;
   const space = (await dataSpaceStatus(supabase, [company.id]))[company.id]!;

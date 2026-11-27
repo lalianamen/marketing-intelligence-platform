@@ -353,6 +353,19 @@ try {
   await page.screenshot({ path: `${OUT}/07-settings-advanced.png`, fullPage: true });
   step("advanced admin section shows registry/jobs/usage");
 
+  const invitee = `invitee-${randomUUID().slice(0, 8)}@example.test`;
+  await page.goto(`${BASE}/app/account#users`);
+  await page.fill('[data-testid="invite-form"] input[name="email"]', invitee);
+  await page.check('[data-testid="invite-form"] input[value="company_viewer"]');
+  await page.click('[data-testid="invite-form"] button:has-text("Give access")');
+  await page.waitForURL(/invited=/);
+  assert.ok(await page.locator('[data-testid="users"]').getByText(invitee).first().isVisible(), "the invitation is listed");
+  await page.screenshot({ path: `${OUT}/13-users.png`, fullPage: true });
+  await page.locator('[data-testid="users"] li', { hasText: invitee }).locator('button:has-text("Cancel")').click();
+  await page.waitForURL(/users_saved=1/);
+  assert.equal(await page.locator('[data-testid="users"] li', { hasText: invitee }).count(), 0, "a cancelled invitation disappears");
+  step("account settings → Users: invite a viewer to a chosen company, then cancel it");
+
   await page.goto(`${BASE}/app`);
   assert.equal(await page.locator('button:has-text("Delete company")').count(), 0, "no delete button in the company header");
   await page.click('nav[aria-label="Company"] a:has-text("Settings")');

@@ -1,4 +1,4 @@
-import { getCompanyContext } from "@/server/appContext";
+import { getManageContext } from "@/server/appContext";
 import { bingOAuthConfigured, loadConfig } from "@/server/config";
 import { Button, Card, EmptyState, LinkButton, Notice } from "@/components/ui";
 import { connectBingAction } from "../../actions";
@@ -8,7 +8,7 @@ import { connectBingAction } from "../../actions";
 // platform's Bing sign-in is not configured, or when the user asks for it.
 export default async function BingConnectPage({ searchParams }: { searchParams: Promise<{ error?: string; key?: string }> }) {
   const sp = await searchParams;
-  const ctx = await getCompanyContext();
+  const ctx = await getManageContext();
   if (!ctx.company) return <EmptyState title="Add a company first">Add a company first.</EmptyState>;
   if (bingOAuthConfigured(loadConfig()) && sp.key !== "1") {
     return (
